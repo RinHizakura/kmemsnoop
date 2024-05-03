@@ -1,0 +1,17 @@
+[package]
+name = "memwatch"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.82"
+ctrlc = "3.1"
+libc = "0.2.154"
+libbpf-rs = "0.23.0"
+perf-event-open-sys2 = "5.0.3"
+
+[build-dependencies]
+anyhow = "1.0.82"
+libbpf-cargo = "0.23.0"
