@@ -9,13 +9,44 @@
 #include <bpf/bpf_tracing.h>
 /* clang-format on */
 
+#include "msg.h"
 #include "utils.h"
+
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 4096 * 2);
+} msg_ringbuf SEC(".maps");
+
+u64 MSG_ID = 0;
+
+static msg_ent_t *get_message()
+{
+    size_t total_size = sizeof(msg_ent_t);
+
+    MSG_ID++;
+
+    msg_ent_t *ent = bpf_ringbuf_reserve(&msg_ringbuf, total_size, 0);
+    if (!ent) {
+        bpf_printk("Drop message entry %d", MSG_ID);
+        return NULL;
+    }
+    ent->id = MSG_ID;
+
+    return ent;
+}
+
+
+static void submit_message(msg_ent_t *ent)
+{
+    bpf_ringbuf_submit(ent, 0);
+}
 
 SEC("perf_event")
 int perf_event_handler(UNUSED struct pt_regs *ctx)
 {
-    int test = 0;
-    bpf_printk("PERF_EVENT %d", test);
+    msg_ent_t *ent = get_message();
+    if (ent)
+        submit_message(ent);
 
     return 0;
 }

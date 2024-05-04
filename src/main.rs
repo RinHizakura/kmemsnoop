@@ -3,19 +3,25 @@ use std::mem::size_of;
 use std::os::fd::{AsFd, AsRawFd};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::bump_memlock_rlimit::*;
 use crate::ioctl::*;
+use crate::utils::*;
 
-use anyhow::{anyhow, Result};
 use libbpf_rs::libbpf_sys::PERF_FLAG_FD_CLOEXEC;
 use libbpf_rs::skel::*;
+use libbpf_rs::RingBufferBuilder;
+
+use anyhow::{anyhow, Result};
 use libc::ioctl;
 use perf_event_open_sys::bindings::{perf_event_attr, HW_BREAKPOINT_RW, PERF_TYPE_BREAKPOINT};
 use perf_event_open_sys::perf_event_open;
+use plain::Plain;
 
 mod bump_memlock_rlimit;
 mod ioctl;
+mod utils;
 
 #[path = "../bpf/.output/memwatch.skel.rs"]
 #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -69,6 +75,20 @@ fn attach_breakpoint(symbol_addr: usize, prog_fd: i32) -> Result<()> {
     Ok(())
 }
 
+#[repr(C)]
+struct MsgEnt {
+    id: u64,
+}
+unsafe impl Plain for MsgEnt {}
+
+pub fn msg_handler(bytes: &[u8]) -> i32 {
+    let ent: &MsgEnt = cast(bytes);
+
+    println!("Get message id={}", ent.id);
+
+    return 0;
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.len() < 1 {
@@ -84,13 +104,23 @@ fn main() -> Result<()> {
     let prog_fd = skel.progs().perf_event_handler().as_fd().as_raw_fd();
     attach_breakpoint(addr, prog_fd)?;
 
+    let mut builder = RingBufferBuilder::new();
+    let binding = skel.maps();
+    builder.add(binding.msg_ringbuf(), msg_handler)?;
+    let msg = builder.build()?;
+
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
     })?;
 
-    while running.load(Ordering::SeqCst) {}
+    while running.load(Ordering::SeqCst) {
+        let result = msg.poll(Duration::MAX);
+        if let Err(_r) = &result {
+            return result.map_err(anyhow::Error::msg);
+        }
+    }
 
     Ok(())
 }
