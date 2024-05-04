@@ -48,6 +48,7 @@ int perf_event_handler(UNUSED struct pt_regs *ctx)
     if (ent)
         submit_message(ent);
 
+    bpf_printk("Get\n");
     return 0;
 }
 
