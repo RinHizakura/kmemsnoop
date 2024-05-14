@@ -1,19 +1,24 @@
 ARCH ?= $(shell uname -p)
 
 ifeq ($(ARCH), aarch64)
-	CROSS_COMPILE = aarch64-unknown-linux-gnu
+	VMLINUX_DIR = vmlinux/arm64
 	LINKER = CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER
+	CROSS_COMPILE = aarch64-unknown-linux-gnu
 	EXPORT_PATH = $(LINKER)=$(CROSS_COMPILE)-gcc
 	CARGO_OPT = --target $(CROSS_COMPILE)
-	OUT = target/$(CROSS_COMPILE)/debug
 else
+	VMLINUX_DIR = .
+	CROSS_COMPILE =
 	EXPORT_PATH =
 	CARGO_OPT =
-	OUT = target/debug
 endif
 
+OUT = target/$(CROSS_COMPILE)/debug
+
+# It is recommanded to build vmlinux.h from scratch by bpftool, but
+# here we use the prebuilt header in cross compilation for convenient.
+VMLINUX_H = $(VMLINUX_DIR)/vmlinux.h
 BIN = $(OUT)/memwatch
-VMLINUX_H = vmlinux.h
 GIT_HOOKS := .git/hooks/applied
 SRCS = $(shell find ./bpf -name '*.c')
 SRCS += $(shell find ./src -name '*.rs')

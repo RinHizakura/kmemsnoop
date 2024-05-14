@@ -24,7 +24,8 @@ if [ $? -ne 0 ]; then
      DIFF=diff
 fi
 
-FILES=`git diff --cached --name-only --diff-filter=ACMR | grep -E "\.(c|cpp|h)$"`
+FILES=`git diff --cached --name-only --diff-filter=ACMR | grep -E "\.(c|cpp|h)$" | grep -v vmlinux.h`
+echo f $FILES
 for FILE in $FILES; do
     nf=`git checkout-index --temp $FILE | cut -f 1`
     tempdir=`mktemp -d` || exit 1
