@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::bump_memlock_rlimit::*;
+use crate::ksym::KSymResolver;
 use crate::msg::*;
 use crate::perf::attach_breakpoint;
 
@@ -13,6 +14,7 @@ use libbpf_rs::RingBufferBuilder;
 use anyhow::{anyhow, Result};
 
 mod bump_memlock_rlimit;
+mod ksym;
 mod msg;
 mod perf;
 mod utils;
@@ -20,17 +22,27 @@ mod utils;
 #[path = "../bpf/.output/memwatch.skel.rs"]
 #[cfg_attr(rustfmt, rustfmt_skip)]
 mod memwatch;
+use libc::sleep;
 use memwatch::*;
+
+fn ksym2addr(sym: &str) -> Result<usize> {
+    let kresolver = KSymResolver::new();
+    kresolver
+        .find_ksym(sym)
+        .ok_or(anyhow!(format!("Failed to address of symbol {sym}")))
+}
 
 fn parse_args() -> Result<usize> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.len() < 1 {
-        return Err(anyhow!("usage: memwatch <addr>"));
+        return Err(anyhow!("usage: memwatch <addr/symbol_name>"));
     }
 
-    let addr = usize::from_str_radix(&args[0], 16).expect("The input address is invalid");
+    if let Ok(addr) = usize::from_str_radix(&args[0], 16) {
+        return Ok(addr);
+    }
 
-    Ok(addr)
+    ksym2addr(&args[0])
 }
 
 fn load_ebpf_prog() -> Result<MemwatchSkel<'static>> {
