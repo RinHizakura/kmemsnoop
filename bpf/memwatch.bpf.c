@@ -19,9 +19,16 @@ struct {
 
 u64 MSG_ID = 0;
 
-static msg_ent_t *get_message()
+static msg_ent_t *get_message(msg_type_t type)
 {
     size_t total_size = sizeof(msg_ent_t);
+
+    switch (type) {
+    case MSG_TYPE_STACK:
+        total_size += sizeof(stack_msg_t);
+    default:
+        break;
+    }
 
     MSG_ID++;
 
@@ -38,17 +45,26 @@ static msg_ent_t *get_message()
 
 static void submit_message(msg_ent_t *ent)
 {
+    bpf_printk("Submit message id=%d\n", ent->id);
     bpf_ringbuf_submit(ent, 0);
 }
 
 SEC("perf_event")
 int perf_event_handler(UNUSED struct pt_regs *ctx)
 {
-    msg_ent_t *ent = get_message();
-    if (ent)
-        submit_message(ent);
+    msg_ent_t *ent;
+    stack_msg_t *stack_msg;
 
-    bpf_printk("Get\n");
+    ent = get_message(MSG_TYPE_STACK);
+    if (!ent)
+        return -1;
+
+    stack_msg = GET_INNER_MSG(ent, stack_msg_t);
+
+    stack_msg->kstack_sz =
+        bpf_get_stack(ctx, stack_msg->kstack, sizeof(stack_msg->kstack), 0);
+
+    submit_message(ent);
     return 0;
 }
 

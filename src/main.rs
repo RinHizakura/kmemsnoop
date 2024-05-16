@@ -8,14 +8,18 @@ use std::time::Duration;
 use crate::bump_memlock_rlimit::*;
 use crate::utils::*;
 
+use blazesym::symbolize::Sym;
+use blazesym::symbolize::{CodeInfo, Input, Kernel, Source, Symbolized, Symbolizer};
+use blazesym::Addr;
+
 use libbpf_rs::libbpf_sys::PERF_FLAG_FD_CLOEXEC;
 use libbpf_rs::RingBufferBuilder;
 use libbpf_rs::{skel::*, Link, Program};
 
 use anyhow::{anyhow, Result};
-use libc::{c_int, getchar, pid_t};
+use libc::{c_int, pid_t};
 use perf_event_open_sys::bindings::{
-    perf_event_attr, HW_BREAKPOINT_RW, HW_BREAKPOINT_X, PERF_TYPE_BREAKPOINT,
+    perf_event_attr, HW_BREAKPOINT_RW, HW_BREAKPOINT_X, PERF_SAMPLE_CALLCHAIN, PERF_TYPE_BREAKPOINT,
 };
 use perf_event_open_sys::perf_event_open;
 use plain::Plain;
@@ -86,11 +90,18 @@ fn attach_breakpoint(symbol_addr: usize, prog: &mut Program) -> Result<Vec<Link>
     attr.size = size_of::<perf_event_attr>() as u32;
     attr.type_ = PERF_TYPE_BREAKPOINT;
     attr.__bindgen_anon_3.bp_addr = symbol_addr as u64;
-    attr.__bindgen_anon_4.bp_len = 8; // 4 bytes breakpoint
+    attr.__bindgen_anon_4.bp_len = 8;
     attr.bp_type = HW_BREAKPOINT_X;
-    attr.__bindgen_anon_1.sample_period = 1; // response to every event
+    // response to every event
+    attr.__bindgen_anon_1.sample_period = 1;
     attr.__bindgen_anon_2.wakeup_events = 1;
-    attr.set_precise_ip(2); // request synchronous delivery
+    // request synchronous delivery
+    attr.set_precise_ip(2);
+    /* On perf_event with precise_ip, calling bpf_get_stack()
+     * may trigger unwinder warnings and occasional crashes.
+     * bpf_get_[stack|stackid] works around this issue by using
+     * callchain attached to perf_sample_data. */
+    attr.sample_type = PERF_SAMPLE_CALLCHAIN as u64;
 
     let mut links = Vec::new();
     for cpu in get_online_cpus() {
@@ -101,43 +112,75 @@ fn attach_breakpoint(symbol_addr: usize, prog: &mut Program) -> Result<Vec<Link>
     Ok(links)
 }
 
+const MSG_TYPE_STACK: u64 = 0;
+
 #[repr(C)]
 struct MsgEnt {
     id: u64,
+    typ: u64,
 }
 unsafe impl Plain for MsgEnt {}
 
-pub fn msg_handler(bytes: &[u8]) -> i32 {
-    let ent: &MsgEnt = cast(bytes);
+const PERF_MAX_STACK_DEPTH: usize = 127;
+type Stack = [u64; PERF_MAX_STACK_DEPTH];
 
-    println!("Get message id={}", ent.id);
+#[repr(C)]
+struct StackMsg {
+    kstack_sz: u64,
+    kstack: Stack,
+}
+unsafe impl Plain for StackMsg {}
 
-    return 0;
+const ADDR_WIDTH: usize = 16;
+
+fn print_frame(name: &str, input_addr: Addr, addr: Addr, offset: usize) {
+    println!(
+        "{input_addr:#0width$x}: {name} @ {addr:#x}+{offset:#x}",
+        width = ADDR_WIDTH
+    )
 }
 
-fn test_main(val: &mut i32) -> Result<()> {
-    let mut c = unsafe { getchar() };
-    while c != -1 {
-        c = unsafe { getchar() };
-        *val = c;
+fn stack_msg_handler(bytes: &[u8]) -> i32 {
+    let msg: &StackMsg = cast(bytes);
+    let stack_sz = msg.kstack_sz as usize / size_of::<u64>();
+    let addrs = &msg.kstack[..stack_sz];
+
+    let src = Source::Kernel(Kernel::default());
+    let symbolizer = Symbolizer::new();
+    let syms = symbolizer.symbolize(&src, Input::AbsAddr(addrs)).unwrap();
+
+    for (input_addr, sym) in addrs.iter().copied().zip(syms) {
+        match sym {
+            Symbolized::Sym(Sym {
+                name, addr, offset, ..
+            }) => {
+                print_frame(&name, input_addr, addr, offset);
+            }
+            Symbolized::Unknown(..) => {
+                println!("{input_addr:#0width$x}: <no-symbol>", width = ADDR_WIDTH)
+            }
+        }
     }
 
-    Ok(())
+    0
+}
+
+pub fn msg_handler(bytes: &[u8]) -> i32 {
+    let ent_size = size_of::<MsgEnt>();
+    let ent = &bytes[0..ent_size];
+    let inner = &bytes[ent_size..];
+
+    let ent: &MsgEnt = cast(ent);
+    println!("Get message id={}", ent.id);
+
+    match ent.typ {
+        MSG_TYPE_STACK => stack_msg_handler(inner),
+        _ => 0,
+    }
 }
 
 fn main() -> Result<()> {
-    let mut test_mode = false;
-    let mut addr = parse_args()?;
-    let mut val = 0;
-
-    /* FIXME: We use address 0 as a hint to test the watchpoint, which
-     * is achieved by tracing the internal variable which can be written
-     * by user input. This is not elegant and should be removed when
-     * the project get stable. */
-    if addr == 0 {
-        test_mode = true;
-        addr = &val as *const i32 as usize;
-    }
+    let addr = parse_args()?;
 
     let mut skel = load_ebpf_prog()?;
     let _ = skel.attach()?;
@@ -147,10 +190,6 @@ fn main() -> Result<()> {
     /* The link should be hold to represent the lifetime of
      * breakpoint. */
     let _link = attach_breakpoint(addr, prog)?;
-
-    if test_mode {
-        return test_main(&mut val);
-    }
 
     println!("Attach breakpoint on address {:x}", addr);
 

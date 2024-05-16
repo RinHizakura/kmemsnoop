@@ -12,6 +12,7 @@ libc = "0.2.154"
 libbpf-rs = "0.23.0"
 perf-event-open-sys2 = "5.0.3"
 plain = "0.2.3"
+blazesym = "0.2.0-alpha.12"
 
 [build-dependencies]
 anyhow = "1.0.82"
