@@ -8,6 +8,7 @@ use crate::ksym::KSymResolver;
 use crate::msg::*;
 use crate::perf::attach_breakpoint;
 
+use ksym::KSYM_FUNC;
 use libbpf_rs::skel::*;
 use libbpf_rs::RingBufferBuilder;
 
@@ -22,14 +23,13 @@ mod utils;
 #[path = "../bpf/.output/memwatch.skel.rs"]
 #[cfg_attr(rustfmt, rustfmt_skip)]
 mod memwatch;
-use libc::sleep;
 use memwatch::*;
 
 fn ksym2addr(sym: &str) -> Result<usize> {
     let kresolver = KSymResolver::new();
     kresolver
-        .find_ksym(sym)
-        .ok_or(anyhow!(format!("Failed to address of symbol {sym}")))
+        .find_ksym(sym, KSYM_FUNC)
+        .ok_or(anyhow!(format!("Failed to get address of symbol {sym}")))
 }
 
 fn parse_args() -> Result<usize> {
