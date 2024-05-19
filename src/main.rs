@@ -1,18 +1,17 @@
-use std::env;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::bump_memlock_rlimit::*;
-use crate::ksym::KSymResolver;
+use crate::ksym::{KSymResolver, KSYM_FUNC};
 use crate::msg::*;
 use crate::perf::attach_breakpoint;
 
-use ksym::KSYM_FUNC;
 use libbpf_rs::skel::*;
 use libbpf_rs::RingBufferBuilder;
 
 use anyhow::{anyhow, Result};
+use clap::{CommandFactory, Parser};
 
 mod bump_memlock_rlimit;
 mod ksym;
@@ -32,17 +31,27 @@ fn ksym2addr(sym: &str) -> Result<usize> {
         .ok_or(anyhow!(format!("Failed to get address of symbol {sym}")))
 }
 
+#[derive(Parser)]
+struct Cli {
+    symbol: Option<String>,
+}
+
 fn parse_args() -> Result<usize> {
-    let args: Vec<String> = env::args().skip(1).collect();
-    if args.len() < 1 {
-        return Err(anyhow!("usage: memwatch <addr/symbol_name>"));
+    let cli = Cli::parse();
+    let symbol = cli.symbol;
+
+    if symbol.is_none() {
+        let mut cmd = Cli::command();
+        let _ = cmd.print_help();
+        return Err(anyhow!("cmdline error"));
     }
 
-    if let Ok(addr) = usize::from_str_radix(&args[0], 16) {
+    let symbol = symbol.unwrap();
+    if let Ok(addr) = usize::from_str_radix(&symbol, 16) {
         return Ok(addr);
     }
 
-    ksym2addr(&args[0])
+    ksym2addr(&symbol)
 }
 
 fn load_ebpf_prog() -> Result<MemwatchSkel<'static>> {
