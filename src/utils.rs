@@ -1,5 +1,9 @@
-use libc::c_int;
+use libc::{c_char, c_int};
+
+use std::ffi::CStr;
 use std::fs;
+
+use anyhow::{anyhow, Result};
 
 pub fn cast<T: plain::Plain>(args: &[u8]) -> &T {
     let size = std::mem::size_of::<T>();
@@ -28,4 +32,19 @@ pub fn get_online_cpus() -> Vec<c_int> {
     }
 
     cpus
+}
+
+#[inline]
+fn to_cstr(buf: &[c_char]) -> &CStr {
+    unsafe { CStr::from_ptr(buf.as_ptr()) }
+}
+
+pub fn uname_version() -> Result<String> {
+    let mut n = unsafe { std::mem::zeroed() };
+    let r = unsafe { libc::uname(&mut n) };
+    if r != 0 {
+        return Err(anyhow!("Failed to get uname information"));
+    }
+
+    Ok(to_cstr(&n.version[..]).to_string_lossy().to_string())
 }

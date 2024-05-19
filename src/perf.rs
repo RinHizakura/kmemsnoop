@@ -51,13 +51,26 @@ pub fn attach_breakpoint(symbol_addr: usize, prog: &mut Program) -> Result<Vec<L
     // response to every event
     attr.__bindgen_anon_1.sample_period = 1;
     attr.__bindgen_anon_2.wakeup_events = 1;
-    // request synchronous delivery
-    attr.set_precise_ip(2);
-    /* On perf_event with precise_ip, calling bpf_get_stack()
-     * may trigger unwinder warnings and occasional crashes.
-     * bpf_get_[stack|stackid] works around this issue by using
-     * callchain attached to perf_sample_data. */
-    attr.sample_type = PERF_SAMPLE_CALLCHAIN as u64;
+
+    /* We need to consider different kernel version here. See:
+     * https://lore.kernel.org/bpf/20220908214104.3851807-1-namhyung@kernel.org/     */
+    let version = uname_version()?;
+    /* FIXME: It is not correct to compare version string using
+     * normal string comparison. */
+    if version <= "6.0".to_owned() {
+        /* Don't set precise_ip to allow bpf_get_stack(). This
+         * is a workaround and should be changed if better
+         * solution exist. */
+        attr.set_precise_ip(0);
+    } else {
+        /* request synchronous delivery */
+        attr.set_precise_ip(2);
+        /* On perf_event with precise_ip, calling bpf_get_stack()
+         * may trigger unwinder warnings and occasional crashes.
+         * bpf_get_[stack|stackid] works around this issue by using
+         * callchain attached to perf_sample_data. */
+        attr.sample_type = PERF_SAMPLE_CALLCHAIN as u64;
+    }
 
     let mut links = Vec::new();
     for cpu in get_online_cpus() {
