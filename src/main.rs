@@ -13,6 +13,9 @@ use libbpf_rs::RingBufferBuilder;
 use anyhow::{anyhow, Result};
 use clap::{CommandFactory, Parser};
 
+use blazesym::inspect;
+use blazesym::inspect::Inspector;
+
 mod bump_memlock_rlimit;
 mod ksym;
 mod msg;
@@ -24,6 +27,19 @@ mod utils;
 mod memwatch;
 use memwatch::*;
 
+fn vmlinux2addr(sym: &str, vmlinux: &str) -> Result<usize> {
+    let src = inspect::Source::Elf(inspect::Elf::new(vmlinux));
+    let inspector = Inspector::new();
+    let results = inspector.lookup(&src, &[sym])?;
+
+    let results = results.into_iter().flatten().collect::<Vec<_>>();
+
+    assert!(results.len() == 1);
+    let addr = results[0].addr as usize;
+
+    Ok(addr)
+}
+
 fn ksym2addr(sym: &str) -> Result<usize> {
     let kresolver = KSymResolver::new();
     kresolver
@@ -33,7 +49,11 @@ fn ksym2addr(sym: &str) -> Result<usize> {
 
 #[derive(Parser)]
 struct Cli {
+    #[arg(help = "kernel symbol to attach the watchpoint")]
     symbol: Option<String>,
+
+    #[arg(short, long, help = "path for vmlinux of the running kernel")]
+    vmlinux: Option<String>,
 }
 
 fn parse_args() -> Result<usize> {
@@ -51,7 +71,12 @@ fn parse_args() -> Result<usize> {
         return Ok(addr);
     }
 
-    ksym2addr(&symbol)
+    let vmlinux = cli.vmlinux;
+    if let Some(vmlinux) = vmlinux {
+        vmlinux2addr(&symbol, &vmlinux)
+    } else {
+        ksym2addr(&symbol)
+    }
 }
 
 fn load_ebpf_prog() -> Result<MemwatchSkel<'static>> {
