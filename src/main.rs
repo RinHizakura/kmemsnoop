@@ -52,7 +52,7 @@ struct Cli {
     #[arg(help = "kernel symbol to attach the watchpoint")]
     symbol: Option<String>,
 
-    #[arg(short, long, help = "path for vmlinux of the running kernel")]
+    #[arg(short, long, help = "vmlinux path of running kernel(need nokaslr)")]
     vmlinux: Option<String>,
 }
 
@@ -94,6 +94,7 @@ fn load_ebpf_prog() -> Result<MemwatchSkel<'static>> {
 
 fn main() -> Result<()> {
     let addr = parse_args()?;
+    println!("Watchpoint attached on {addr:x}");
 
     let mut skel = load_ebpf_prog()?;
     let _ = skel.attach()?;
