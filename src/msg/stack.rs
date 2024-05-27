@@ -20,11 +20,15 @@ unsafe impl Plain for StackMsg {}
 
 const ADDR_WIDTH: usize = 16;
 
-fn print_frame(name: &str, input_addr: Addr, addr: Addr, offset: usize) {
-    println!(
-        "{input_addr:#0width$x}: {name} @ {addr:#x}+{offset:#x}",
-        width = ADDR_WIDTH
-    )
+fn print_frame(name: &str, addr_info: Option<(Addr, Addr, usize)>) {
+    if let Some((input_addr, addr, offset)) = addr_info {
+        println!(
+            "{input_addr:#0width$x}: {name} @ {addr:#x}+{offset:#x}",
+            width = ADDR_WIDTH
+        )
+    } else {
+        println!("{:width$}  {name} [inlined]", " ", width = ADDR_WIDTH)
+    }
 }
 
 pub fn stack_msg_handler(bytes: &[u8]) -> i32 {
@@ -39,9 +43,17 @@ pub fn stack_msg_handler(bytes: &[u8]) -> i32 {
     for (input_addr, sym) in addrs.iter().copied().zip(syms) {
         match sym {
             Symbolized::Sym(Sym {
-                name, addr, offset, ..
+                name,
+                addr,
+                offset,
+                code_info,
+                inlined,
+                ..
             }) => {
-                print_frame(&name, input_addr, addr, offset);
+                print_frame(&name, Some((input_addr, addr, offset)));
+                for frame in inlined.iter() {
+                    print_frame(&frame.name, None);
+                }
             }
             Symbolized::Unknown(..) => {
                 println!("{input_addr:#0width$x}: <no-symbol>", width = ADDR_WIDTH)
