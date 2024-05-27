@@ -34,7 +34,10 @@ fn vmlinux2addr(sym: &str, vmlinux: &str) -> Result<usize> {
 
     let results = results.into_iter().flatten().collect::<Vec<_>>();
 
-    assert!(results.len() == 1);
+    if results.len() != 1 {
+        return Err(anyhow!(format!("Failed to get address of symbol {sym}")));
+    }
+
     let addr = results[0].addr as usize;
 
     Ok(addr)
