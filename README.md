@@ -50,7 +50,7 @@ Or if you want to trace the read and write access for kernel parameters
 `sysctl_sched_cfs_bandwidth_slice`
 
 ```
-$ sudo ./target/debug/memwatch rw4 sysctl_sched_cfs_bandwidth_slice -v vmlinux
+$ sudo memwatch rw4 sysctl_sched_cfs_bandwidth_slice -v vmlinux
 
 # You can run the following command to trigger the watchpoint!
 $ cat /proc/sys/kernel/sched_cfs_bandwidth_slice_us
