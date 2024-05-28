@@ -8,7 +8,7 @@ of using these is that it causes little overhead compared to the normal
 execution.
 
 With the `memwatch` tool, you can easily install a hardware
-breakpoint/watchpoint in Linux kerenl, as long as it is supported for your
+breakpoint/watchpoint in Linux kernel, as long as it is supported for your
 platform. This enable to trace/debug the running Linux kernel without KGDB or
 hardware debugger.
 
