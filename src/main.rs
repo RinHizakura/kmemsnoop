@@ -5,13 +5,13 @@ use std::time::Duration;
 use crate::bump_memlock_rlimit::*;
 use crate::ksym::{KSymResolver, KSYM_FUNC};
 use crate::msg::*;
-use crate::perf::attach_breakpoint;
+use crate::perf::{attach_breakpoint, BpType};
 
 use libbpf_rs::skel::*;
 use libbpf_rs::RingBufferBuilder;
 
 use anyhow::{anyhow, Result};
-use clap::{CommandFactory, Parser};
+use clap::Parser;
 
 use blazesym::inspect;
 use blazesym::inspect::Inspector;
@@ -52,24 +52,20 @@ fn ksym2addr(sym: &str) -> Result<usize> {
 
 #[derive(Parser)]
 struct Cli {
+    #[clap(value_enum)]
+    bp: BpType,
+
     #[arg(help = "kernel symbol to attach the watchpoint")]
-    symbol: Option<String>,
+    symbol: String,
 
     #[arg(short, long, help = "vmlinux path of running kernel(need nokaslr)")]
     vmlinux: Option<String>,
 }
 
-fn parse_args() -> Result<usize> {
+fn parse_addr() -> Result<usize> {
     let cli = Cli::parse();
     let symbol = cli.symbol;
 
-    if symbol.is_none() {
-        let mut cmd = Cli::command();
-        let _ = cmd.print_help();
-        return Err(anyhow!("cmdline error"));
-    }
-
-    let symbol = symbol.unwrap();
     if let Ok(addr) = usize::from_str_radix(&symbol, 16) {
         return Ok(addr);
     }
@@ -80,6 +76,11 @@ fn parse_args() -> Result<usize> {
     } else {
         ksym2addr(&symbol)
     }
+}
+
+fn parse_bp() -> BpType {
+    let cli = Cli::parse();
+    cli.bp
 }
 
 fn load_ebpf_prog() -> Result<MemwatchSkel<'static>> {
@@ -96,8 +97,10 @@ fn load_ebpf_prog() -> Result<MemwatchSkel<'static>> {
 }
 
 fn main() -> Result<()> {
-    let addr = parse_args()?;
+    let addr = parse_addr()?;
     println!("Watchpoint attached on {addr:x}");
+
+    let bp = parse_bp();
 
     let mut skel = load_ebpf_prog()?;
     let _ = skel.attach()?;
@@ -106,7 +109,7 @@ fn main() -> Result<()> {
     let prog = progs.perf_event_handler();
     /* The link should be hold to represent the lifetime of
      * breakpoint. */
-    let _link = attach_breakpoint(addr, prog)?;
+    let _link = attach_breakpoint(addr, bp, prog)?;
 
     let mut builder = RingBufferBuilder::new();
     let binding = skel.maps();
