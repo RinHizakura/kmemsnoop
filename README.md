@@ -27,11 +27,12 @@ CONFIG_PAHOLE_HAS_SPLIT_BTF=y
 CONFIG_DEBUG_INFO_BTF_MODULES=y
 ```
 
-You may want to expose more kernel symbols with the following configs.
-These will be convenient for you to find the address of kernel symbols. It is
-also useful to trace kernel with
+Besides, you may want to expose more kernel symbols to userspace with the
+following settings. These are convenient for you to find the address of
+kernel symbols without inspecting the vmlinux source. On top of that, it
+makes kernel tracing with
 [KASLR](https://en.wikipedia.org/wiki/Address_space_layout_randomization)
-enabled or percpu variables.
+enabled possible, and provides direct way to explore percpu variables.
 
 ```
 CONFIG_KALLSYMS=y
