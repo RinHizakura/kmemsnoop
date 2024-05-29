@@ -14,6 +14,60 @@ hardware debugger.
 
 ## Usage
 
+### Prerequisite
+
+`memwatch` relies on
+[eBPF CO-RE(Compile Once – Run Everywhere)](https://docs.kernel.org/bpf/libbpf/libbpf_overview.html#bpf-co-re-compile-once-run-everywhere)
+to enable complete kernel tracing, so the following kernel config **must**
+be required.
+
+```
+CONFIG_DEBUG_INFO_BTF=y
+CONFIG_PAHOLE_HAS_SPLIT_BTF=y
+CONFIG_DEBUG_INFO_BTF_MODULES=y
+```
+
+You may want to expose more kernel symbols with the following configs.
+These will be convenient for you to find the address of kernel symbols. It is
+also useful to trace kernel with
+[KASLR](https://en.wikipedia.org/wiki/Address_space_layout_randomization)
+enabled or percpu variables.
+
+```
+CONFIG_KALLSYMS=y
+CONFIG_KALLSYMS_ALL=y
+CONFIG_KALLSYMS_ABSOLUTE_PERCPU=y
+CONFIG_KALLSYMS_BASE_RELATIVE=y
+```
+
+### Build
+
+These dependencies are required to build memwatch.
+
+```
+$ apt install clang llvm libelf1 libelf-dev zlib1g-dev
+```
+
+You will also need bpftool for the generating of vmlinux.h.
+
+```
+$ git clone https://github.com/libbpf/bpftool.git
+$ cd bpftool
+$ git submodule update --init
+$ cd src
+$ make
+$ sudo make install
+```
+
+After the installation of these dependencies, you should be able to build
+`memwatch` now.
+
+```
+$ make
+```
+
+### Execute
+
 ```
 $ memwatch --help
 
