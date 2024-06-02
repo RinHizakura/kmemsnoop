@@ -7,6 +7,7 @@ use crate::ksym::{KSymResolver, KSYM_FUNC};
 use crate::msg::*;
 use crate::perf::{attach_breakpoint, BpType};
 
+use ksym::KSYM_DATA;
 use libbpf_rs::skel::*;
 use libbpf_rs::RingBufferBuilder;
 
@@ -43,10 +44,16 @@ fn vmlinux2addr(sym: &str, vmlinux: &str) -> Result<usize> {
     Ok(addr)
 }
 
-fn ksym2addr(sym: &str) -> Result<usize> {
+fn ksym2addr(sym: &str, bp: &BpType) -> Result<usize> {
     let kresolver = KSymResolver::new();
+
+    let sym_typ = match bp {
+        BpType::X1 | BpType::X2 | BpType::X4 | BpType::X8 => KSYM_FUNC,
+        _ => KSYM_DATA,
+    };
+
     kresolver
-        .find_ksym(sym, KSYM_FUNC)
+        .find_ksym(sym, sym_typ)
         .ok_or(anyhow!(format!("Failed to get address of symbol {sym}")))
 }
 
@@ -62,7 +69,7 @@ struct Cli {
     vmlinux: Option<String>,
 }
 
-fn parse_addr() -> Result<usize> {
+fn parse_addr(bp: &BpType) -> Result<usize> {
     let cli = Cli::parse();
     let symbol = cli.symbol;
 
@@ -74,7 +81,7 @@ fn parse_addr() -> Result<usize> {
     if let Some(vmlinux) = vmlinux {
         vmlinux2addr(&symbol, &vmlinux)
     } else {
-        ksym2addr(&symbol)
+        ksym2addr(&symbol, &bp)
     }
 }
 
@@ -97,10 +104,10 @@ fn load_ebpf_prog() -> Result<MemwatchSkel<'static>> {
 }
 
 fn main() -> Result<()> {
-    let addr = parse_addr()?;
-    println!("Watchpoint attached on {addr:x}");
-
     let bp = parse_bp();
+    let addr = parse_addr(&bp)?;
+
+    println!("Watchpoint attached on {addr:x}");
 
     let mut skel = load_ebpf_prog()?;
     let _ = skel.attach()?;
