@@ -6,11 +6,16 @@ from drgn.helpers.linux import *
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("pid", type=int, help="pid of the task_struct")
+    parser.add_argument("-p", "--pid", type=int, help="pid of the task_struct")
     args = parser.parse_args()
     return args
 
 pid = get_args().pid
+
+if not pid:
+    for task in for_each_task(prog):
+        print(f"pid={task.pid.value_()}: {cmdline(task)}")
+    exit(0)
 
 task = find_task(pid)
 if not task:
