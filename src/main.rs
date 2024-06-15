@@ -23,10 +23,10 @@ mod msg;
 mod perf;
 mod utils;
 
-#[path = "../bpf/.output/memwatch.skel.rs"]
+#[path = "../bpf/.output/kmemsnoop.skel.rs"]
 #[cfg_attr(rustfmt, rustfmt_skip)]
-mod memwatch;
-use memwatch::*;
+mod kmemsnoop;
+use kmemsnoop::*;
 
 fn vmlinux2addr(sym: &str, vmlinux: &str) -> Result<usize> {
     let src = inspect::Source::Elf(inspect::Elf::new(vmlinux));
@@ -90,13 +90,13 @@ fn parse_bp() -> BpType {
     cli.bp
 }
 
-fn load_ebpf_prog() -> Result<MemwatchSkel<'static>> {
+fn load_ebpf_prog() -> Result<KmemsnoopSkel<'static>> {
     /* We may have to bump RLIMIT_MEMLOCK for libbpf explicitly */
     if cfg!(bump_memlock_rlimit_manually) {
         bump_memlock_rlimit()?;
     }
 
-    let builder = MemwatchSkelBuilder::default();
+    let builder = KmemsnoopSkelBuilder::default();
     /* Open BPF application */
     let open_skel = builder.open()?;
     /* Load & verify BPF programs */

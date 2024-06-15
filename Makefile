@@ -18,7 +18,7 @@ OUT = target/$(CROSS_COMPILE)/debug
 # It is recommanded to build vmlinux.h from scratch by bpftool, but
 # here we use the prebuilt header in cross compilation for convenient.
 VMLINUX_H = $(VMLINUX_DIR)/vmlinux.h
-BIN = $(OUT)/memwatch
+BIN = $(OUT)/kmemsnoop
 GIT_HOOKS := .git/hooks/applied
 SRCS = $(shell find ./bpf -name '*.c')
 SRCS += $(shell find ./src -name '*.rs')

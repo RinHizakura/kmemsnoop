@@ -4,8 +4,8 @@ use std::path::Path;
 
 use libbpf_cargo::SkeletonBuilder;
 
-const SKEL_SRC: &str = "bpf/memwatch.bpf.c";
-const SKEL_OUT: &str = "bpf/.output/memwatch.skel.rs";
+const SKEL_SRC: &str = "bpf/kmemsnoop.bpf.c";
+const SKEL_OUT: &str = "bpf/.output/kmemsnoop.skel.rs";
 
 fn main() -> Result<()> {
     // FIXME: Is it possible to output to env!("OUT_DIR")?

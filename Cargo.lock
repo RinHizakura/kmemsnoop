@@ -292,6 +292,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
 
 [[package]]
+name = "kmemsnoop"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blazesym",
+ "clap",
+ "ctrlc",
+ "libbpf-cargo",
+ "libbpf-rs",
+ "libc",
+ "perf-event-open-sys2",
+ "plain",
+]
+
+[[package]]
 name = "libbpf-cargo"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -365,21 +380,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83faa42c0a078c393f6b29d5db232d8be22776a891f8f56e5284faee4a20b327"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "memwatch"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "blazesym",
- "clap",
- "ctrlc",
- "libbpf-cargo",
- "libbpf-rs",
- "libc",
- "perf-event-open-sys2",
- "plain",
 ]
 
 [[package]]
