@@ -10,9 +10,6 @@ def get_args():
     args = parser.parse_args()
     return args
 
-if len(sys.argv) < 2:
-    exit(f"usage: {sys.argv[0]} pid")
-
 pid = get_args().pid
 
 task = find_task(pid)
