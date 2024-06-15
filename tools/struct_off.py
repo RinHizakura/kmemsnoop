@@ -18,4 +18,6 @@ args = get_args()
 
 struct = args.struct
 member = args.member
-print(offsetof(prog.type(f"{struct}"), member))
+off = offsetof(prog.type(f"{struct}"), member)
+
+print(f"offset of '{member}' in '{struct}' = {off}")
