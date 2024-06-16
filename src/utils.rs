@@ -43,12 +43,22 @@ fn to_cstr(buf: &[c_char]) -> &CStr {
     unsafe { CStr::from_ptr(buf.as_ptr()) }
 }
 
-pub fn uname_version() -> Result<String> {
+pub fn uname_version() -> Result<(u32, u32)> {
     let mut n = unsafe { std::mem::zeroed() };
     let r = unsafe { libc::uname(&mut n) };
     if r != 0 {
         return Err(anyhow!("Failed to get uname information"));
     }
 
-    Ok(to_cstr(&n.version[..]).to_string_lossy().to_string())
+    let verstr = to_cstr(&n.release[..]).to_string_lossy().to_string();
+    let ver: Vec<&str> = verstr.split(".").collect();
+
+    if ver.len() < 2 {
+        return Err(anyhow!("Invalid version string {verstr}"));
+    }
+
+    let main = ver[0].parse()?;
+    let sub = ver[1].parse()?;
+
+    Ok((main, sub))
 }

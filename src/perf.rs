@@ -86,9 +86,7 @@ pub fn attach_breakpoint(symbol_addr: usize, bp: BpType, prog: &mut Program) -> 
     /* We need to consider different kernel version here. See:
      * https://lore.kernel.org/bpf/20220908214104.3851807-1-namhyung@kernel.org/     */
     let version = uname_version()?;
-    /* FIXME: It is not correct to compare version string using
-     * normal string comparison. */
-    if version <= "6.0".to_owned() {
+    if version <= (6, 0) {
         /* Don't set precise_ip to allow bpf_get_stack(). This
          * is a workaround and should be changed if better
          * solution exist. */
