@@ -6,6 +6,7 @@ use crate::bump_memlock_rlimit::*;
 use crate::ksym::{KSymResolver, KSYM_FUNC};
 use crate::msg::*;
 use crate::perf::{attach_breakpoint, BpType};
+use crate::utils::hexstr2int;
 
 use ksym::KSYM_DATA;
 use libbpf_rs::skel::*;
@@ -59,10 +60,10 @@ fn ksym2addr(sym: &str, bp: &BpType) -> Result<usize> {
 
 #[derive(Parser)]
 struct Cli {
-    #[clap(value_enum)]
+    #[arg(value_enum, help = "The type of the watchpoint")]
     bp: BpType,
 
-    #[arg(help = "kernel symbol to attach the watchpoint")]
+    #[arg(help = "kernel symbol or address to attach the watchpoint")]
     symbol: String,
 
     #[arg(short, long, help = "vmlinux path of running kernel(need nokaslr)")]
@@ -73,7 +74,7 @@ fn parse_addr(bp: &BpType) -> Result<usize> {
     let cli = Cli::parse();
     let symbol = cli.symbol;
 
-    if let Ok(addr) = usize::from_str_radix(&symbol, 16) {
+    if let Ok(addr) = hexstr2int(&symbol) {
         return Ok(addr);
     }
 
