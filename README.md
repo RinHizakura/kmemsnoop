@@ -4,10 +4,9 @@
 
 On specific processor, hardware breakpoint registers are supported to monitor
 memory access or instruction execution in hardware manner. The great advantage
-of using these is that it causes little overhead compared to the normal
-execution.
+of using these is that it causes little overhead on trace.
 
-With the `kmemsnoop` tool, you can easily install a hardware
+With the `kmemsnoop`, you can easily install a hardware
 breakpoint/watchpoint in Linux kernel, as long as it is supported for your
 platform. This enable to trace/debug the running Linux kernel without KGDB or
 hardware debugger.
@@ -29,10 +28,10 @@ CONFIG_DEBUG_INFO_BTF_MODULES=y
 
 Besides, you may want to expose more kernel symbols to userspace with the
 following settings. These are convenient for you to find the address of
-kernel symbols without inspecting the vmlinux source. On top of that, it
-makes kernel tracing with
+kernel symbols from /proc/kallsyms instead of inspecting the vmlinux source.
+On top of that, /proc/kallsyms makes kernel tracing with
 [KASLR](https://en.wikipedia.org/wiki/Address_space_layout_randomization)
-enabled possible, and provides direct way to explore percpu variables.
+enabled possible.
 
 ```
 CONFIG_KALLSYMS=y
@@ -75,13 +74,18 @@ $ kmemsnoop --help
 Usage: kmemsnoop [OPTIONS] <BP> <SYMBOL>
 
 Arguments:
-  <BP>      [possible values: r1, w1, rw1, x1, r2, w2, rw2, x2, r4, w4, rw4, x4, r8, w8, rw8, x8]
-  <SYMBOL>  kernel symbol to attach the watchpoint
+  <BP>      The type of the watchpoint [possible values: r1, w1, rw1, x1, r2, w2, rw2, x2, r4, w4, rw4, x4, r8, w8, rw8, x8]
+  <SYMBOL>  kernel symbol or address to attach the watchpoint
 
 Options:
   -v, --vmlinux <VMLINUX>  vmlinux path of running kernel(need nokaslr)
   -h, --help               Print help
 ```
+
+* `SYMBOL` is the name of kernel symbol to attach the watchpoint. Using the
+address value in hex is also availible.
+* `BP` is the type of watchpoint. For example, r8 means to watch a read
+opperation from the base of `SYMBOL` with 8 bytes length.
 
 Since `kmemsnoop` relies on eBPF to collect kernel informations, it needs to be
 run as root. The type and the symbol/address to attach the breakpoint must
