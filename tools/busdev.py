@@ -51,7 +51,6 @@ for priv in list_for_each_entry(
 ):
     device = priv.device
     device_name = device.kobj.name.string_().decode("utf-8")
-    print(device_name)
     if device_name != dev:
         continue
 
