@@ -30,15 +30,20 @@ def bus_to_subsys(bus):
             return sp
     return NULL(bus.prog_, "struct subsys_private *")
 
-class ToDev():
-    def to_platform_dev(d):
-        return "todo"
+class ToDriver():
+    def to_platform_driver(d):
+        return container_of(d, f"struct platform_driver", "driver")
 
-    def to_usb_dev(d):
-        return "todo"
+    def to_usb_driver(d):
+        # Consider different Linux version, try to get
+        # usb_driver in two different way
+        if linux_ver() < (6, 8):
+            return container_of(d, f"struct usb_driver", "drvwrap.driver")
+        else:
+            return container_of(d, f"struct usb_driver", "driver")
 
-    def to_pci_dev(d):
-        return container_of(d, f"struct pci_dev", "dev")
+    def to_pci_driver(d):
+        return container_of(d, f"struct pci_driver", "driver")
 
 args = get_args()
 bus = args.bus
@@ -47,16 +52,14 @@ dev = args.dev
 sp = bus_to_subsys(prog[f"{bus}_bus_type"].address_of_())
 
 for priv in list_for_each_entry(
-    "struct device_private", sp.klist_devices.k_list.address_of_(), "knode_bus.n_node"
+    "struct driver_private", sp.drivers_kset.list.address_of_(), "kobj.entry"
 ):
-    device = priv.device
-    device_name = device.kobj.name.string_().decode("utf-8")
-    print(device_name)
-    if device_name != dev:
+    driver = priv.driver
+    driver_name = driver.name.string_().decode()
+    if dev and driver_name != dev:
         continue
+    print(f"=== {driver_name} ===\n{driver}")
 
-    print(f"=== {device_name} ===\n{device}")
-
-    to_dev = getattr(ToDev, f"to_{bus}_dev")
-    inner_dev = to_dev(device)
-    print(inner_dev)
+    to_driver = getattr(ToDriver, f"to_{bus}_driver")
+    inner_driver = to_driver(driver)
+    print(inner_driver)
