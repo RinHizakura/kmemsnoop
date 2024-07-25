@@ -59,6 +59,12 @@ $ make
 $ sudo make install
 ```
 
+Besides, some submodules will be needed.
+
+```
+$ git submodule update --init --recursive
+```
+
 After the installation of these dependencies, you should be able to build
 `kmemsnoop` now.
 

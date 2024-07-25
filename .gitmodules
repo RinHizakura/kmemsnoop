@@ -1,0 +1,3 @@
+[submodule "drgn-knight"]
+	path = drgn-knight
+	url = git@github.com:RinHizakura/drgn-knight.git
