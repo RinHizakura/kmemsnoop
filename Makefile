@@ -32,6 +32,7 @@ $(GIT_HOOKS):
 	@echo
 
 $(BIN): $(SRCS) $(VMLINUX_H)
+	git submodule update --init --recursive
 	$(EXPORT_PATH) cargo build $(CARGO_OPT)
 
 $(VMLINUX_H):

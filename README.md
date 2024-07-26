@@ -36,8 +36,6 @@ enabled possible.
 ```
 CONFIG_KALLSYMS=y
 CONFIG_KALLSYMS_ALL=y
-CONFIG_KALLSYMS_ABSOLUTE_PERCPU=y
-CONFIG_KALLSYMS_BASE_RELATIVE=y
 ```
 
 ### Build
@@ -57,12 +55,6 @@ $ git submodule update --init
 $ cd src
 $ make
 $ sudo make install
-```
-
-Besides, some submodules will be needed.
-
-```
-$ git submodule update --init --recursive
 ```
 
 After the installation of these dependencies, you should be able to build
