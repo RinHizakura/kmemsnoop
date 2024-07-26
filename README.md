@@ -43,7 +43,7 @@ CONFIG_KALLSYMS_ALL=y
 These dependencies are required to build kmemsnoop.
 
 ```
-$ apt install clang llvm libelf1 libelf-dev zlib1g-dev
+$ sudo apt install clang llvm libelf1 libelf-dev zlib1g-dev
 ```
 
 You will also need bpftool for the generating of vmlinux.h.
