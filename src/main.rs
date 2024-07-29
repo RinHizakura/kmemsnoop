@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use crate::bump_memlock_rlimit::*;
 use crate::ksym::{KSymResolver, KSYM_FUNC};
+use crate::lexer::*;
 use crate::msg::*;
 use crate::perf::{attach_breakpoint, BpType};
 use crate::utils::hexstr2int;
@@ -18,8 +19,11 @@ use clap::Parser;
 use blazesym::inspect;
 use blazesym::inspect::Inspector;
 
+use drgn_knight::{Object, Program};
+
 mod bump_memlock_rlimit;
 mod ksym;
+mod lexer;
 mod msg;
 mod perf;
 mod utils;
@@ -58,31 +62,104 @@ fn ksym2addr(sym: &str, bp: &BpType) -> Result<usize> {
         .ok_or(anyhow!(format!("Failed to get address of symbol {sym}")))
 }
 
+fn find_member(obj: &Object, path: &str) -> Option<Object> {
+    let mut lexer = Lexer::new(path.to_string());
+
+    /* The First token should be Token::Member */
+    let mut cur_obj = Object::default();
+    if let Some(token) = lexer.next_token() {
+        match token {
+            Token::Member(member) => {
+                cur_obj = obj.deref_member(&member)?;
+            }
+            _ => return None,
+        }
+    }
+
+    let mut prev_token = 0;
+    while let Some(token) = lexer.next_token() {
+        match token {
+            Token::Member(member) => {
+                if prev_token == 0 {
+                    return None;
+                }
+
+                if prev_token == 1 {
+                    cur_obj = cur_obj.member(&member)?;
+                } else {
+                    cur_obj = cur_obj.deref_member(&member)?;
+                }
+
+                prev_token = 0;
+            }
+            Token::Access => {
+                if prev_token != 0 {
+                    return None;
+                }
+                prev_token = 1;
+            }
+            Token::Deref => {
+                if prev_token != 0 {
+                    return None;
+                }
+                prev_token = 2;
+            }
+        }
+    }
+
+    Some(cur_obj)
+}
+
+fn parse_task_field(pid: u64, expr: &str) -> Result<usize> {
+    let prog = Program::new();
+    let task = prog.find_task(pid)?;
+
+    if let Some(obj) = find_member(&task, expr) {
+        return obj.to_num().map(|addr| addr as usize);
+    }
+
+    Err(anyhow!("Invalid expression '{expr}' for task pid={pid}"))
+}
+
 #[derive(Parser)]
 struct Cli {
-    #[arg(value_enum, help = "The type of the watchpoint")]
+    #[arg(value_enum, help = "type of the watchpoint")]
     bp: BpType,
 
-    #[arg(help = "kernel symbol or address to attach the watchpoint")]
-    symbol: String,
+    #[arg(help = "expression of watchpoint(kernel symbol or addess by default)")]
+    expr: String,
 
     #[arg(short, long, help = "vmlinux path of running kernel(need nokaslr)")]
     vmlinux: Option<String>,
+
+    #[arg(
+        short,
+        long,
+        help = "struct-expr mode: use 'struct task_struct' from pid"
+    )]
+    pid_task: Option<u64>,
 }
 
 fn parse_addr(bp: &BpType) -> Result<usize> {
     let cli = Cli::parse();
-    let symbol = cli.symbol;
 
-    if let Ok(addr) = hexstr2int(&symbol) {
+    let expr = cli.expr;
+    let pid_task = cli.pid_task;
+
+    /* Using struct expression mode if special option is specified */
+    if let Some(pid) = pid_task {
+        return parse_task_field(pid, &expr);
+    }
+
+    if let Ok(addr) = hexstr2int(&expr) {
         return Ok(addr);
     }
 
     let vmlinux = cli.vmlinux;
     if let Some(vmlinux) = vmlinux {
-        vmlinux2addr(&symbol, &vmlinux)
+        vmlinux2addr(&expr, &vmlinux)
     } else {
-        ksym2addr(&symbol, &bp)
+        ksym2addr(&expr, &bp)
     }
 }
 
