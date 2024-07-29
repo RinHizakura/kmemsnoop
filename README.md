@@ -69,21 +69,32 @@ $ make
 ```
 $ kmemsnoop --help
 
-Usage: kmemsnoop [OPTIONS] <BP> <SYMBOL>
+Usage: kmemsnoop [OPTIONS] <BP> <EXPR>
 
 Arguments:
-  <BP>      The type of the watchpoint [possible values: r1, w1, rw1, x1, r2, w2, rw2, x2, r4, w4, rw4, x4, r8, w8, rw8, x8]
-  <SYMBOL>  kernel symbol or address to attach the watchpoint
+  <BP>    type of the watchpoint [possible values: r1, w1, rw1, x1, r2, w2, rw2, x2, r4, w4, rw4, x4, r8, w8, rw8, x8]
+  <EXPR>  expression of watchpoint(kernel symbol or addess by default)
 
 Options:
-  -v, --vmlinux <VMLINUX>  vmlinux path of running kernel(need nokaslr)
-  -h, --help               Print help
+  -v, --vmlinux <VMLINUX>    vmlinux path of running kernel(need nokaslr)
+  -p, --pid-task <PID_TASK>  struct-expr mode: use 'struct task_struct' from pid
+  -h, --help                 Print help
 ```
 
-* `SYMBOL` is the name of kernel symbol to attach the watchpoint. Using the
-address value in hex is also availible.
+* `EXPR` is the expression to describe the watchpoint. Without "special option"
+(e.g. `-p`), it can be the name of kernel symbol or addess value in hex. If
+using the special option, it is the expression dereference from the
+given structure according the option.
 * `BP` is the type of watchpoint. For example, r8 means to watch a read
 opperation from the base of `SYMBOL` with 8 bytes length.
+
+Options:
+* `VMLINUX` is the path of `vmlinux` file for getting the address of kernel
+symbol instead of using /proc/kallsyms.
+* (EXPERIMENTAL) `PID_TASK` enables structure expression mode on `EXPR`. This
+allow you to access the field which is dereference from a `struct task_struct`
+by `EXPR` for watchpoint. The `struct task_struct` comes from the task whose
+pid is `PID_TASK`.
 
 Since `kmemsnoop` relies on eBPF to collect kernel informations, it needs to be
 run as root. The type and the symbol/address to attach the breakpoint must
