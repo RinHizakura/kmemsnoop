@@ -107,6 +107,8 @@ Besides, you need to add `nokaslr` to kernel bootargs when using vmlinux for
 symbol information, because the address on specific kernel symbol will be
 random without it.
 
+### Examples
+
 For example, if you want to trace the execution of kernel function
 `schduler_tick()`.
 
@@ -114,7 +116,7 @@ For example, if you want to trace the execution of kernel function
 $ sudo kmemsnoop x8 scheduler_tick
 ```
 
-Or if you want to trace the read and write access for kernel parameters
+If you want to trace the read and write access for kernel parameters
 `sysctl_sched_cfs_bandwidth_slice`
 
 ```
