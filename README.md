@@ -110,20 +110,34 @@ random without it.
 ### Examples
 
 For example, if you want to trace the execution of kernel function
-`schduler_tick()`.
+`schduler_tick()`:
 
 ```
 $ sudo kmemsnoop x8 scheduler_tick
 ```
 
 If you want to trace the read and write access for kernel parameters
-`sysctl_sched_cfs_bandwidth_slice`
+`sysctl_sched_cfs_bandwidth_slice`:
 
 ```
 $ sudo kmemsnoop rw4 sysctl_sched_cfs_bandwidth_slice -v vmlinux
 
 # You can run the following command to trigger the watchpoint!
 $ cat /proc/sys/kernel/sched_cfs_bandwidth_slice_us
+```
+
+If you want to trace the object under `struct task_struct`, for example, the
+`&task->on_rq` of task pid 1:
+
+```
+sudo kmemsnoop -p 1 rw4 on_rq
+```
+
+If you want to trace the pointer under `task_struct` instead, for example,
+the `task->parent` of task pid 1:
+
+```
+sudo kmemsnoop -p 1 rw8 *parent
 ```
 
 Currently, only the stack backtrace is showed when hitting the watchpoint. Any
