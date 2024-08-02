@@ -1,6 +1,7 @@
 pub enum Token {
     Member(String),
     Access,
+    Valof,
     Deref,
 }
 
@@ -29,6 +30,7 @@ impl Lexer {
             self.pos += 1;
             match c {
                 b'.' => return Some(Token::Access),
+                b'*' => return Some(Token::Valof),
                 b'-' => {
                     if self.pos >= self.len || s[self.pos] != b'>' {
                         return None;

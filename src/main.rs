@@ -62,60 +62,77 @@ fn ksym2addr(sym: &str, bp: &BpType) -> Result<usize> {
         .ok_or(anyhow!(format!("Failed to get address of symbol {sym}")))
 }
 
-fn find_member(obj: &Object, path: &str) -> Option<Object> {
-    let mut lexer = Lexer::new(path.to_string());
+enum TokenType {
+    Access,
+    Deref,
+    Member,
+}
 
-    /* The First token should be Token::Member */
-    let mut cur_obj = Object::default();
-    if let Some(token) = lexer.next_token() {
+fn find_expr_value(obj: &Object, expr: &str) -> Option<u64> {
+    let mut lexer = Lexer::new(expr.to_string());
+    let mut value_of = false;
+
+    /* The First token should be Token::Member or Token::Valof, and
+     * we need the first member here. */
+    let mut cur_obj = None;
+    while let Some(token) = lexer.next_token() {
         match token {
+            Token::Valof => {
+                if value_of {
+                    return None;
+                }
+                value_of = true;
+            }
             Token::Member(member) => {
-                cur_obj = obj.deref_member(&member)?;
+                cur_obj = obj.deref_member(&member);
+                break;
             }
             _ => return None,
         }
     }
 
-    let mut prev_token = 0;
+    let mut cur_obj = cur_obj?;
+    let mut prev_token = TokenType::Member;
     while let Some(token) = lexer.next_token() {
         match token {
             Token::Member(member) => {
-                if prev_token == 0 {
-                    return None;
-                }
+                cur_obj = match prev_token {
+                    TokenType::Access => cur_obj.member(&member)?,
+                    TokenType::Deref => cur_obj.deref_member(&member)?,
+                    _ => return None,
+                };
 
-                if prev_token == 1 {
-                    cur_obj = cur_obj.member(&member)?;
-                } else {
-                    cur_obj = cur_obj.deref_member(&member)?;
-                }
-
-                prev_token = 0;
+                prev_token = TokenType::Member;
             }
             Token::Access => {
-                if prev_token != 0 {
+                if !matches!(prev_token, TokenType::Member) {
                     return None;
                 }
-                prev_token = 1;
+                prev_token = TokenType::Access;
             }
             Token::Deref => {
-                if prev_token != 0 {
+                if !matches!(prev_token, TokenType::Member) {
                     return None;
                 }
-                prev_token = 2;
+                prev_token = TokenType::Deref;
             }
+            _ => return None,
         }
     }
 
-    Some(cur_obj)
+    if value_of {
+        cur_obj.to_num().ok()
+    } else {
+        cur_obj.address_of().ok()
+    }
 }
 
 fn parse_task_field(pid: u64, expr: &str) -> Result<usize> {
     let prog = Program::new();
     let task = prog.find_task(pid)?;
 
-    if let Some(obj) = find_member(&task, expr) {
-        return obj.to_num().map(|addr| addr as usize);
+    if let Some(value) = find_expr_value(&task, expr) {
+        return Ok(value as usize);
     }
 
     Err(anyhow!("Invalid expression '{expr}' for task pid={pid}"))
