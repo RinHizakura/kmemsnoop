@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::bump_memlock_rlimit::*;
+use crate::kexpr::find_expr_value;
 use crate::ksym::{KSymResolver, KSYM_FUNC};
-use crate::lexer::*;
 use crate::msg::*;
 use crate::perf::{attach_breakpoint, BpType};
 use crate::utils::hexstr2int;
@@ -22,6 +22,7 @@ use blazesym::inspect::Inspector;
 use drgn_knight::{Object, Program};
 
 mod bump_memlock_rlimit;
+mod kexpr;
 mod ksym;
 mod lexer;
 mod msg;
@@ -62,80 +63,12 @@ fn ksym2addr(sym: &str, bp: &BpType) -> Result<usize> {
         .ok_or(anyhow!(format!("Failed to get address of symbol {sym}")))
 }
 
-enum TokenType {
-    Access,
-    Deref,
-    Member,
-}
-
-fn find_expr_value(obj: &Object, expr: &str) -> Option<u64> {
-    let mut lexer = Lexer::new(expr.to_string());
-    let mut value_of = false;
-
-    /* The First token should be Token::Member or Token::Valof, and
-     * we need the first member here. */
-    let mut cur_obj = None;
-    while let Some(token) = lexer.next_token() {
-        match token {
-            Token::Valof => {
-                if value_of {
-                    return None;
-                }
-                value_of = true;
-            }
-            Token::Member(member) => {
-                cur_obj = obj.deref_member(&member);
-                break;
-            }
-            _ => return None,
-        }
-    }
-
-    let mut cur_obj = cur_obj?;
-    let mut prev_token = TokenType::Member;
-    while let Some(token) = lexer.next_token() {
-        match token {
-            Token::Member(member) => {
-                cur_obj = match prev_token {
-                    TokenType::Access => cur_obj.member(&member)?,
-                    TokenType::Deref => cur_obj.deref_member(&member)?,
-                    _ => return None,
-                };
-
-                prev_token = TokenType::Member;
-            }
-            Token::Access => {
-                if !matches!(prev_token, TokenType::Member) {
-                    return None;
-                }
-                prev_token = TokenType::Access;
-            }
-            Token::Deref => {
-                if !matches!(prev_token, TokenType::Member) {
-                    return None;
-                }
-                prev_token = TokenType::Deref;
-            }
-            _ => return None,
-        }
-    }
-
-    if value_of {
-        cur_obj.to_num().ok()
-    } else {
-        cur_obj.address_of().ok()
-    }
-}
-
-fn parse_task_field(pid: u64, expr: &str) -> Result<usize> {
-    let prog = Program::new();
-    let task = prog.find_task(pid)?;
-
-    if let Some(value) = find_expr_value(&task, expr) {
+fn kexpr2addr(root_obj: &Object, expr: &str) -> Result<usize> {
+    if let Some(value) = find_expr_value(root_obj, expr) {
         return Ok(value as usize);
     }
 
-    Err(anyhow!("Invalid expression '{expr}' for task pid={pid}"))
+    Err(anyhow!("Invalid kexpr {expr}"))
 }
 
 #[derive(Parser)]
@@ -149,35 +82,33 @@ struct Cli {
     #[arg(short, long, help = "vmlinux path of running kernel(need nokaslr)")]
     vmlinux: Option<String>,
 
-    #[arg(
-        short,
-        long,
-        help = "struct-expr mode: use 'struct task_struct' from pid"
-    )]
+    #[arg(short, long, help = "kexpr: use 'struct task_struct' from pid")]
     pid_task: Option<u64>,
 }
 
 fn parse_addr(bp: &BpType) -> Result<usize> {
     let cli = Cli::parse();
-
     let expr = cli.expr;
     let pid_task = cli.pid_task;
+    let vmlinux = cli.vmlinux;
 
-    /* Using struct expression mode if special option is specified */
+    /* Use kexpr if special option is specified */
     if let Some(pid) = pid_task {
-        return parse_task_field(pid, &expr);
+        let prog = Program::new();
+        let task = prog.find_task(pid)?;
+        return kexpr2addr(&task, &expr);
     }
 
     if let Ok(addr) = hexstr2int(&expr) {
         return Ok(addr);
     }
 
-    let vmlinux = cli.vmlinux;
+    /* Use vmlinux to know the address by symbol */
     if let Some(vmlinux) = vmlinux {
-        vmlinux2addr(&expr, &vmlinux)
-    } else {
-        ksym2addr(&expr, &bp)
+        return vmlinux2addr(&expr, &vmlinux);
     }
+
+    ksym2addr(&expr, &bp)
 }
 
 fn parse_bp() -> BpType {

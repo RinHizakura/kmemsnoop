@@ -38,6 +38,16 @@ CONFIG_KALLSYMS=y
 CONFIG_KALLSYMS_ALL=y
 ```
 
+(Optional) `kmemsnoop` tool support a special type of expression called
+"kexpr". It allows you to access specific kind of object in the kernel(e.g.
+a `sturct task_struct` from task pid), and set watchpoint on the object member
+with the given expression. In order to use this feature, you need to enable
+`/proc/kcore` to make access the kernel objects possible.
+
+```
+CONFIG_PROC_KCORE=y
+```
+
 ### Build
 
 These dependencies are required to build kmemsnoop.
@@ -77,7 +87,7 @@ Arguments:
 
 Options:
   -v, --vmlinux <VMLINUX>    vmlinux path of running kernel(need nokaslr)
-  -p, --pid-task <PID_TASK>  struct-expr mode: use 'struct task_struct' from pid
+  -p, --pid-task <PID_TASK>  kexpr: use 'struct task_struct' from pid
   -h, --help                 Print help
 ```
 
@@ -91,9 +101,9 @@ opperation from the base of `SYMBOL` with 8 bytes length.
 Options:
 * `VMLINUX` is the path of `vmlinux` file for getting the address of kernel
 symbol instead of using /proc/kallsyms.
-* (EXPERIMENTAL) `PID_TASK` enables structure expression mode on `EXPR`. This
-allow you to access the field which is dereference from a `struct task_struct`
-by `EXPR` for watchpoint. The `struct task_struct` comes from the task whose
+* `PID_TASK` enables to use kexpr on `EXPR`. This allow you to access
+the field which is dereference from a `struct task_struct`
+by `EXPR` as watchpoint. The `struct task_struct` comes from the task whose
 pid is `PID_TASK`.
 
 Since `kmemsnoop` relies on eBPF to collect kernel informations, it needs to be
