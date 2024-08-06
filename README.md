@@ -28,8 +28,8 @@ CONFIG_DEBUG_INFO_BTF_MODULES=y
 
 Besides, you may want to expose more kernel symbols to userspace with the
 following settings. These are convenient for you to find the address of
-kernel symbols from /proc/kallsyms instead of inspecting the vmlinux source.
-On top of that, /proc/kallsyms makes kernel tracing with
+kernel symbols from `/proc/kallsyms` instead of inspecting the vmlinux source.
+On top of that, `/proc/kallsyms` makes kernel tracing with
 [KASLR](https://en.wikipedia.org/wiki/Address_space_layout_randomization)
 enabled possible.
 
@@ -39,7 +39,7 @@ CONFIG_KALLSYMS_ALL=y
 ```
 
 (Optional) `kmemsnoop` tool support a special type of expression called
-"kexpr". It allows you to access specific kind of object in the kernel(e.g.
+**kexpr**. It allows you to access specific kind of object in the kernel(e.g.
 a `sturct task_struct` from task pid), and set watchpoint on the object member
 with the given expression. In order to use this feature, you need to enable
 `/proc/kcore` to make access the kernel objects possible.
@@ -104,7 +104,7 @@ opperation from the base of `SYMBOL` with 8 bytes length.
 
 Options:
 * `VMLINUX` is the path of `vmlinux` file for getting the address of kernel
-symbol instead of using /proc/kallsyms.
+symbol instead of using `/proc/kallsyms`.
 * `PID_TASK` enables to use kexpr on `EXPR`. This allow you to access
 the field which is dereference from a `struct task_struct`
 by `EXPR` as watchpoint. The `struct task_struct` comes from the task whose
@@ -144,14 +144,14 @@ If you want to trace the object under `struct task_struct`, for example, the
 `&task->on_rq` of task pid 1:
 
 ```
-sudo kmemsnoop -p 1 rw4 on_rq
+$ sudo kmemsnoop -p 1 rw4 on_rq
 ```
 
 If you want to trace the pointer under `task_struct` instead, for example,
 the `task->parent` of task pid 1:
 
 ```
-sudo kmemsnoop -p 1 rw8 *parent
+$ sudo kmemsnoop -p 1 rw8 *parent
 ```
 
 Currently, only the stack backtrace is showed when hitting the watchpoint. Any
