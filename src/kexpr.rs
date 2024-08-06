@@ -1,13 +1,80 @@
-use crate::lexer::*;
-use drgn_knight::Object;
+use anyhow::{anyhow, Result};
 
+#[cfg(feature = "kexpr")]
+use drgn_knight::{Object, Program};
+
+#[cfg(feature = "kexpr")]
+enum Token {
+    Member(String),
+    Access,
+    Valof,
+    Deref,
+}
+
+/* FIXME: This is an ugly lexer for the C structure experssion :( */
+#[cfg(feature = "kexpr")]
+struct Lexer {
+    s: String,
+    pos: usize,
+    len: usize,
+}
+
+#[cfg(feature = "kexpr")]
+impl Lexer {
+    pub fn new(s: String) -> Self {
+        let l = s.len();
+        Lexer {
+            s: s,
+            pos: 0,
+            len: l,
+        }
+    }
+
+    pub fn next_token(&mut self) -> Option<Token> {
+        let s = self.s.as_bytes();
+
+        while self.pos < self.len {
+            let c = s[self.pos] as u8;
+            self.pos += 1;
+            match c {
+                b'.' => return Some(Token::Access),
+                b'*' => return Some(Token::Valof),
+                b'-' => {
+                    if self.pos >= self.len || s[self.pos] != b'>' {
+                        return None;
+                    }
+                    self.pos += 1;
+                    return Some(Token::Deref);
+                }
+                _ => {
+                    let start = self.pos - 1;
+
+                    while self.pos < self.len {
+                        let c = s[self.pos];
+                        if c == b'.' || c == b'-' {
+                            break;
+                        }
+                        self.pos += 1;
+                    }
+
+                    return Some(Token::Member(self.s[start..self.pos].to_string()));
+                }
+            }
+        }
+
+        None
+    }
+}
+
+#[cfg(feature = "kexpr")]
 enum TokenType {
     Access,
     Deref,
     Member,
 }
 
-pub fn find_expr_value(obj: &Object, expr: &str) -> Option<u64> {
+#[cfg(feature = "kexpr")]
+fn find_expr_value(obj: &Object, expr: &str) -> Option<u64> {
     let mut lexer = Lexer::new(expr.to_string());
     let mut value_of = false;
 
@@ -64,4 +131,20 @@ pub fn find_expr_value(obj: &Object, expr: &str) -> Option<u64> {
     } else {
         cur_obj.address_of().ok()
     }
+}
+
+#[cfg(feature = "kexpr")]
+pub fn task_kexpr2addr(pid: u64, expr: &str) -> Result<usize> {
+    let prog = Program::new();
+    let task = prog.find_task(pid)?;
+    if let Some(value) = find_expr_value(&task, expr) {
+        return Ok(value as usize);
+    }
+
+    Err(anyhow!("Invalid kexpr {expr}"))
+}
+
+#[cfg(not(feature = "kexpr"))]
+pub fn task_kexpr2addr(_pid: u64, _expr: &str) -> Result<usize> {
+    Err(anyhow!("kexpr is not configured"))
 }

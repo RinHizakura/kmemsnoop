@@ -13,6 +13,11 @@ else
 	CARGO_OPT =
 endif
 
+BUILD_FEATURE=
+ifeq ("$(KEXPR)","1")
+    BUILD_FEATURE += --features kexpr
+endif
+
 OUT = target/$(CROSS_COMPILE)/debug
 
 # It is recommanded to build vmlinux.h from scratch by bpftool, but
@@ -33,7 +38,7 @@ $(GIT_HOOKS):
 
 $(BIN): $(SRCS) $(VMLINUX_H)
 	git submodule update --init --recursive
-	$(EXPORT_PATH) cargo build $(CARGO_OPT)
+	$(EXPORT_PATH) cargo build $(BUILD_FEATURE) $(CARGO_OPT)
 
 $(VMLINUX_H):
 	bpftool btf dump file /sys/kernel/btf/vmlinux format c > $(VMLINUX_H)

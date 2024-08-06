@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::bump_memlock_rlimit::*;
-use crate::kexpr::find_expr_value;
+use crate::kexpr::*;
 use crate::ksym::{KSymResolver, KSYM_FUNC};
 use crate::msg::*;
 use crate::perf::{attach_breakpoint, BpType};
@@ -18,8 +18,6 @@ use clap::Parser;
 
 use blazesym::inspect;
 use blazesym::inspect::Inspector;
-
-use drgn_knight::{Object, Program};
 
 mod bump_memlock_rlimit;
 mod kexpr;
@@ -63,14 +61,6 @@ fn ksym2addr(sym: &str, bp: &BpType) -> Result<usize> {
         .ok_or(anyhow!(format!("Failed to get address of symbol {sym}")))
 }
 
-fn kexpr2addr(root_obj: &Object, expr: &str) -> Result<usize> {
-    if let Some(value) = find_expr_value(root_obj, expr) {
-        return Ok(value as usize);
-    }
-
-    Err(anyhow!("Invalid kexpr {expr}"))
-}
-
 #[derive(Parser)]
 struct Cli {
     #[arg(value_enum, help = "type of the watchpoint")]
@@ -94,9 +84,7 @@ fn parse_addr(bp: &BpType) -> Result<usize> {
 
     /* Use kexpr if special option is specified */
     if let Some(pid) = pid_task {
-        let prog = Program::new();
-        let task = prog.find_task(pid)?;
-        return kexpr2addr(&task, &expr);
+        return task_kexpr2addr(pid, &expr);
     }
 
     if let Ok(addr) = hexstr2int(&expr) {
