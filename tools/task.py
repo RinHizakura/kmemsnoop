@@ -1,3 +1,5 @@
+#!/usr/bin/env drgn
+
 import argparse
 
 import drgn
