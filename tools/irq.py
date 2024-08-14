@@ -31,6 +31,12 @@ def irq_settings_get_trigger_mask(desc):
 args = get_args()
 irq = args.irq
 
+print(f"Get information of irq {irq}")
+
 desc = irq_to_desc(irq)
+domain = desc.irq_data.domain
+
 print(desc)
 print("trigger = ", irq_settings_get_trigger_mask(desc))
+
+print(domain)
