@@ -2,14 +2,14 @@
 
 ## Introduction
 
-On specific processor, hardware breakpoint registers are supported to monitor
+On specific processors, hardware breakpoint registers are supported to monitor
 memory access or instruction execution in hardware manner. The great advantage
 of using these is that it causes little overhead on trace.
 
 With the `kmemsnoop`, you can easily install a hardware
 breakpoint/watchpoint in Linux kernel, as long as it is supported for your
-platform. This enable to trace/debug the running Linux kernel without KGDB or
-hardware debugger.
+platform. This enables us to trace/debug the running Linux kernel without KGDB
+or hardware debugger.
 
 ## Usage
 
