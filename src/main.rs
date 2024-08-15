@@ -22,7 +22,6 @@ use blazesym::inspect::Inspector;
 mod bump_memlock_rlimit;
 mod kexpr;
 mod ksym;
-mod lexer;
 mod msg;
 mod perf;
 mod utils;
