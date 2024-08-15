@@ -1,3 +1,4 @@
 target
+test_build
 bpf/.output/*
 vmlinux.h

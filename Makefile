@@ -46,5 +46,11 @@ $(VMLINUX_H):
 check:
 	sudo cat /sys/kernel/debug/tracing/trace_pipe
 
+# FIXME: This will create file with super user permission. We
+# better avoid this if possible.
+test:
+	sudo cargo test --features kexpr --target-dir test_build
+
 clean:
 	cargo clean
+

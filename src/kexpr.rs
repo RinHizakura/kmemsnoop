@@ -148,3 +148,41 @@ pub fn task_kexpr2addr(pid: u64, expr: &str) -> Result<usize> {
 pub fn task_kexpr2addr(_pid: u64, _expr: &str) -> Result<usize> {
     Err(anyhow!("kexpr is not configured"))
 }
+
+#[cfg(feature = "kexpr")]
+#[cfg(test)]
+mod kexpr_tests {
+    use super::*;
+    use crate::hexstr2int;
+    use anyhow::Result;
+    use std::process::{Command, Stdio};
+
+    macro_rules! exec {
+        ($args:expr) => {
+            hexstr2int(
+                &String::from_utf8(
+                    Command::new("./tests/kexpr.py")
+                        .args($args)
+                        .stdout(Stdio::piped())
+                        .output()
+                        .expect("Fail to execute kexpr")
+                        .stdout,
+                )
+                .expect("Invalid output from kexpr.py")
+                .trim()
+                .to_string(),
+            )
+            .expect("Fail to convert kexpr output to usize")
+        };
+    }
+
+    #[test]
+    fn test_task_struct_kexpr() -> Result<()> {
+        let expect = exec!(["-p", "1", "on_rq"]);
+        assert_eq!(expect, task_kexpr2addr(1, "on_rq")?);
+        let expect = exec!(["-p", "1", "*parent"]);
+        assert_eq!(expect, task_kexpr2addr(1, "*parent")?);
+
+        Ok(())
+    }
+}
