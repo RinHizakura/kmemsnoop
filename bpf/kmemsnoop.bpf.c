@@ -14,7 +14,7 @@
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 4096 * 2);
+    __uint(max_entries, 4096);
 } msg_ringbuf SEC(".maps");
 
 u64 MSG_ID = 0;

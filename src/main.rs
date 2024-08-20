@@ -149,5 +149,6 @@ fn main() -> Result<()> {
         }
     }
 
+    println!("Terminate kmemsnoop");
     Ok(())
 }
