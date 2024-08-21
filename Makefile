@@ -14,7 +14,8 @@ else
 endif
 
 BUILD_FEATURE=
-ifeq ("$(KEXPR)","1")
+
+ifneq ("$(wildcard /proc/kcore)", "")
     BUILD_FEATURE += --features kexpr
 endif
 

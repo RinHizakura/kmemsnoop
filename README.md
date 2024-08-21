@@ -73,9 +73,6 @@ After the installation of these dependencies, you should be able to build
 ```
 # Build for kernel symbol and address expression only
 $ make
-
-# Build for 'kexpr' support
-$ make KEXPR=1
 ```
 
 ### Execute
