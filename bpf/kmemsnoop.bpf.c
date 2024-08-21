@@ -38,6 +38,7 @@ static msg_ent_t *get_message(msg_type_t type)
         return NULL;
     }
     ent->id = MSG_ID;
+    ent->type = type;
 
     return ent;
 }

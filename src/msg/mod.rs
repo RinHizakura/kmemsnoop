@@ -27,6 +27,6 @@ pub fn msg_handler(bytes: &[u8]) -> i32 {
 
     match ent.typ {
         MSG_TYPE_STACK => stack_msg_handler(inner),
-        _ => 0,
+        _ => panic!("Invalid message with wrong type"),
     }
 }
