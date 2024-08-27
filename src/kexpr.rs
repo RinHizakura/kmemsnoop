@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 
 #[cfg(feature = "kexpr")]
-use drgn_knight::{Object, Program};
+use drgn_knight::*;
 
 #[cfg(feature = "kexpr")]
 enum Token {
@@ -129,7 +129,7 @@ fn find_expr_value(obj: &Object, expr: &str) -> Option<u64> {
     if value_of {
         cur_obj.to_num().ok()
     } else {
-        cur_obj.address_of().ok()
+        cur_obj.address_of()?.to_num().ok()
     }
 }
 
@@ -140,6 +140,43 @@ pub fn task_kexpr2addr(pid: u64, expr: &str) -> Result<usize> {
     if let Some(value) = find_expr_value(&task, expr) {
         return Ok(value as usize);
     }
+
+    Err(anyhow!("Invalid kexpr {expr}"))
+}
+
+#[cfg(feature = "kexpr")]
+fn bus_to_subsys(prog: &Program, bus: &str) -> Option<Object> {
+    let bus_kset = prog.find_object_variable("bus_kset").ok()?;
+    let bus_kset_list = bus_kset.deref_member("list")?;
+    let subsys_list = List::new(bus_kset_list, "struct subsys_private", "subsys.kobj.entry");
+
+    for subsys in subsys_list {
+        let Some(bus_type) = subsys.deref_member("bus") else {
+            continue;
+        };
+
+        let Some(bus_name) = bus_type.deref_member("name") else {
+            continue;
+        };
+
+        let Ok(name) = bus_name.to_str() else {
+            continue;
+        };
+
+        if bus == name {
+            return Some(subsys);
+        };
+    }
+
+    None
+}
+
+#[cfg(feature = "kexpr")]
+pub fn dev_kexpr2addr(bus: &str, dev_name: &str, expr: &str) -> Result<usize> {
+    let prog = Program::new();
+    let sp = bus_to_subsys(&prog, bus);
+
+    // TODO
 
     Err(anyhow!("Invalid kexpr {expr}"))
 }
@@ -182,6 +219,13 @@ mod kexpr_tests {
         assert_eq!(expect, task_kexpr2addr(1, "on_rq")?);
         let expect = exec!(["-p", "1", "*parent"]);
         assert_eq!(expect, task_kexpr2addr(1, "*parent")?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_device_kexpr() -> Result<()> {
+        assert_eq!(1, dev_kexpr2addr("pci", "57ed:00:00.0", "")?);
 
         Ok(())
     }
