@@ -145,9 +145,11 @@ pub fn task_kexpr2addr(pid: u64, expr: &str) -> Result<usize> {
 }
 
 #[cfg(feature = "kexpr")]
-fn bus_to_subsys(prog: &Program, bus: &str) -> Option<Object> {
-    let bus_kset = prog.find_object_variable("bus_kset").ok()?;
-    let bus_kset_list = bus_kset.deref_member("list")?;
+fn bus_to_subsys(prog: &Program, bus: &str) -> Result<Object> {
+    let bus_kset = prog.find_object_variable("bus_kset")?;
+    let bus_kset_list = bus_kset
+        .deref_member("list")
+        .ok_or(anyhow!("Fail to find member list"))?;
     let subsys_list = List::new(bus_kset_list, "struct subsys_private", "subsys.kobj.entry");
 
     for subsys in subsys_list {
@@ -164,19 +166,43 @@ fn bus_to_subsys(prog: &Program, bus: &str) -> Option<Object> {
         };
 
         if bus == name {
-            return Some(subsys);
+            return Ok(subsys);
         };
     }
 
-    None
+    Err(anyhow!(format!("Bus {bus} is not found")))
 }
 
 #[cfg(feature = "kexpr")]
 pub fn dev_kexpr2addr(bus: &str, dev_name: &str, expr: &str) -> Result<usize> {
     let prog = Program::new();
-    let sp = bus_to_subsys(&prog, bus);
+    let sp = bus_to_subsys(&prog, bus)?;
+    let sp_k_list = sp
+        .deref_member("klist_devices")
+        .ok_or(anyhow!("Fail to find member klist_devices"))?
+        .member("k_list")
+        .ok_or(anyhow!("Fail to find member k_list"))?;
 
-    // TODO
+    let dev_list = List::new(sp_k_list, "struct device_private", "knode_bus.n_node");
+
+    for dev in dev_list {
+        let device = dev
+            .deref_member("device")
+            .ok_or(anyhow!("Fail to find member device"))?;
+        let device_name = device
+            .deref_member("kobj")
+            .ok_or(anyhow!("Fail to find member kobj"))?
+            .member("name")
+            .ok_or(anyhow!("Fail to find member name"))?
+            .to_str()?;
+
+        if device_name == dev_name {
+            println!("{device_name} {dev_name} {expr}");
+            if let Some(value) = find_expr_value(&device, expr) {
+                return Ok(value as usize);
+            }
+        }
+    }
 
     Err(anyhow!("Invalid kexpr {expr}"))
 }
@@ -225,7 +251,8 @@ mod kexpr_tests {
 
     #[test]
     fn test_device_kexpr() -> Result<()> {
-        assert_eq!(1, dev_kexpr2addr("pci", "57ed:00:00.0", "")?);
+        let expect = exec!(["-d", "116e:00:00.0@pci", "id"]);
+        assert_eq!(expect, dev_kexpr2addr("pci", "116e:00:00.0", "id")?);
 
         Ok(())
     }
