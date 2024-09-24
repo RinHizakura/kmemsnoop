@@ -33,6 +33,8 @@ def task_kexpr2addr(pid, kexpr):
 
 def dev_kexpr2addr(device, kexpr):
     tok = device.split("@")
+    if len(tok) != 2:
+        exit("The name of device should be <dev>@<bus/class>")
     dev_name = tok[0]
     bus = tok[1]
     dev = drgn_utils.get_busdev(prog, bus, dev_name)

@@ -218,6 +218,7 @@ mod kexpr_tests {
     use super::*;
     use crate::hexstr2int;
     use anyhow::Result;
+    use std::fs;
     use std::process::{Command, Stdio};
 
     macro_rules! exec {
@@ -251,8 +252,13 @@ mod kexpr_tests {
 
     #[test]
     fn test_device_kexpr() -> Result<()> {
-        let expect = exec!(["-d", "116e:00:00.0@pci", "id"]);
-        assert_eq!(expect, dev_kexpr2addr("pci", "116e:00:00.0", "id")?);
+        let pci_devices = fs::read_dir("/sys/bus/pci/devices/").unwrap();
+        for pci_dev in pci_devices {
+            let dev_name = pci_dev.unwrap().file_name();
+            let dev = dev_name.to_str().unwrap();
+            let expect = exec!(["-d", &format!("{dev}@pci"), "id"]);
+            assert_eq!(expect, dev_kexpr2addr("pci", &dev, "id")?);
+        }
 
         Ok(())
     }
