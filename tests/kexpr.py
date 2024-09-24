@@ -41,6 +41,7 @@ def dev_kexpr2addr(device, kexpr):
     if not dev:
         exit(f"Can find 'struct device' for {device}")
 
+    dev = drgn_utils.to_subsys_dev(bus, dev)
     parse_kexpr(dev, kexpr)
 
 args = get_args()

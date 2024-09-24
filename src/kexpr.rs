@@ -174,6 +174,25 @@ fn bus_to_subsys(prog: &Program, bus: &str) -> Result<Object> {
 }
 
 #[cfg(feature = "kexpr")]
+fn to_subsys_dev(subsys: &str, dev: Object) -> Result<Object> {
+    match subsys {
+        "pci" => dev
+            .container_of("struct pci_dev", "dev")
+            .ok_or(anyhow!("Fail to get pci device data")),
+        "platform" => dev
+            .container_of("struct platform_device", "dev")
+            .ok_or(anyhow!("Fail to get platform device data")),
+        "hwmon" => dev
+            .container_of("struct hwmon_device", "dev")
+            .ok_or(anyhow!("Fail to get hwmon device data")),
+        "rtc" => dev
+            .container_of("struct rtc_device", "dev")
+            .ok_or(anyhow!("Fail to get rtc device data")),
+        _ => Err(anyhow!("Invalid type of subsystem")),
+    }
+}
+
+#[cfg(feature = "kexpr")]
 pub fn dev_kexpr2addr(bus: &str, dev_name: &str, expr: &str) -> Result<usize> {
     let prog = Program::new();
     let sp = bus_to_subsys(&prog, bus)?;
@@ -197,7 +216,7 @@ pub fn dev_kexpr2addr(bus: &str, dev_name: &str, expr: &str) -> Result<usize> {
             .to_str()?;
 
         if device_name == dev_name {
-            println!("{device_name} {dev_name} {expr}");
+            let device = to_subsys_dev(bus, device)?;
             if let Some(value) = find_expr_value(&device, expr) {
                 return Ok(value as usize);
             }
@@ -256,8 +275,8 @@ mod kexpr_tests {
         for pci_dev in pci_devices {
             let dev_name = pci_dev.unwrap().file_name();
             let dev = dev_name.to_str().unwrap();
-            let expect = exec!(["-d", &format!("{dev}@pci"), "id"]);
-            assert_eq!(expect, dev_kexpr2addr("pci", &dev, "id")?);
+            let expect = exec!(["-d", &format!("{dev}@pci"), "subsystem_vendor"]);
+            assert_eq!(expect, dev_kexpr2addr("pci", &dev, "subsystem_vendor")?);
         }
 
         Ok(())
