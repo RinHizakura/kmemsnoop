@@ -21,4 +21,5 @@ anyhow = "1.0.82"
 libbpf-cargo = "0.23.0"
 
 [features]
+default = ["kexpr"]
 kexpr = ["dep:drgn-knight"]

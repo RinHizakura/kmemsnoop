@@ -15,8 +15,8 @@ endif
 
 BUILD_FEATURE=
 
-ifneq ("$(wildcard /proc/kcore)", "")
-    BUILD_FEATURE += --features kexpr
+ifeq ("$(wildcard /proc/kcore)", "")
+    BUILD_FEATURE += --no-default-features kexpr
 endif
 
 OUT = target/$(CROSS_COMPILE)/debug
