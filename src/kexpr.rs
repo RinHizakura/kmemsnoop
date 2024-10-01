@@ -261,21 +261,21 @@ mod kexpr_tests {
 
     #[test]
     fn test_task_struct_kexpr() -> Result<()> {
-        let expect = exec!(["-p", "1", "on_rq"]);
+        let expect = exec!(["--pid", "1", "on_rq"]);
         assert_eq!(expect, task_kexpr2addr(1, "on_rq")?);
-        let expect = exec!(["-p", "1", "*parent"]);
+        let expect = exec!(["--pid", "1", "*parent"]);
         assert_eq!(expect, task_kexpr2addr(1, "*parent")?);
 
         Ok(())
     }
 
     #[test]
-    fn test_device_kexpr() -> Result<()> {
+    fn test_pcidev_kexpr() -> Result<()> {
         let pci_devices = fs::read_dir("/sys/bus/pci/devices/").unwrap();
         for pci_dev in pci_devices {
             let dev_name = pci_dev.unwrap().file_name();
             let dev = dev_name.to_str().unwrap();
-            let expect = exec!(["-d", &format!("{dev}@pci"), "subsystem_vendor"]);
+            let expect = exec!(["--pci_dev", dev, "subsystem_vendor"]);
             assert_eq!(expect, dev_kexpr2addr("pci", &dev, "subsystem_vendor")?);
         }
 

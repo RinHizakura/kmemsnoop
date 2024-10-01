@@ -11,9 +11,8 @@ drgn_utils = importlib.import_module("drgn-utils.subsys_dev")
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-p", "--pid", type=int, help="pid of the task_struct")
-    parser.add_argument("-d", "--device", type=str,
-            help="name of the device in the format {dev}@{subsys}")
+    parser.add_argument("--pid", type=int, help="pid of the task_struct")
+    parser.add_argument("--pci_dev", type=str, help="name of the pci device")
     parser.add_argument("kexpr")
     args = parser.parse_args()
     return args
@@ -31,32 +30,26 @@ def task_kexpr2addr(pid, kexpr):
 
     parse_kexpr(task, kexpr)
 
-def dev_kexpr2addr(device, kexpr):
-    tok = device.split("@")
-    if len(tok) != 2:
-        exit("The name of device should be <dev>@<bus/class>")
-    dev_name = tok[0]
-    bus = tok[1]
-    dev = drgn_utils.get_busdev(prog, bus, dev_name)
+def busdev_kexpr2addr(bus, device, kexpr):
+    dev = drgn_utils.get_busdev(prog, bus, device)
     if not dev:
-        exit(f"Can find 'struct device' for {device}")
+        exit(f"Can find device-specified struct for {device}")
 
     dev = drgn_utils.to_subsys_dev(bus, dev)
     parse_kexpr(dev, kexpr)
 
 args = get_args()
 pid = args.pid
-device = args.device
+pci_dev = args.pci_dev
 kexpr = args.kexpr
 
-if pid and device:
+if not pid and not pci_dev:
     exit(1)
 
-if not pid and not device:
-    exit(1)
-
+# If multiple kexpr is specified, only one
+# of it will be used by order
 if pid:
     task_kexpr2addr(pid, kexpr)
-elif device:
-    dev_kexpr2addr(device, kexpr)
+elif pci_dev:
+    busdev_kexpr2addr("pci", pci_dev, kexpr)
 

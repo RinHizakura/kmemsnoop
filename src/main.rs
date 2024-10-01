@@ -71,19 +71,29 @@ struct Cli {
     #[arg(short, long, help = "vmlinux path of running kernel(need nokaslr)")]
     vmlinux: Option<String>,
 
-    #[arg(short, long, help = "kexpr: use 'struct task_struct' from pid")]
+    #[arg(long, help = "kexpr: use 'struct task_struct' from pid")]
     pid_task: Option<u64>,
+
+    #[arg(long, help = "kexpr: 'sturct pci_dev' from the device name")]
+    pci_dev: Option<String>,
 }
 
 fn parse_addr(bp: &BpType) -> Result<usize> {
     let cli = Cli::parse();
     let expr = cli.expr;
     let pid_task = cli.pid_task;
+    let pci_dev = cli.pci_dev;
     let vmlinux = cli.vmlinux;
 
-    /* Use kexpr if special option is specified */
+    /* Use kexpr if special option is specified.
+     * FIXME: If several kexpr option is specified, kmemsnoop
+     * only takes one of it by order. Do we want to avoid this? */
     if let Some(pid) = pid_task {
         return task_kexpr2addr(pid, &expr);
+    }
+
+    if let Some(pci_dev) = pci_dev {
+        return dev_kexpr2addr("pci", &pci_dev, &expr);
     }
 
     if let Ok(addr) = hexstr2int(&expr) {
