@@ -174,28 +174,8 @@ fn bus_to_subsys(prog: &Program, bus: &str) -> Result<Object> {
 }
 
 #[cfg(feature = "kexpr")]
-fn to_subsys_dev(subsys: &str, dev: Object) -> Result<Object> {
-    match subsys {
-        "pci" => dev
-            .container_of("struct pci_dev", "dev")
-            .ok_or(anyhow!("Fail to get pci device data")),
-        "platform" => dev
-            .container_of("struct platform_device", "dev")
-            .ok_or(anyhow!("Fail to get platform device data")),
-        "hwmon" => dev
-            .container_of("struct hwmon_device", "dev")
-            .ok_or(anyhow!("Fail to get hwmon device data")),
-        "rtc" => dev
-            .container_of("struct rtc_device", "dev")
-            .ok_or(anyhow!("Fail to get rtc device data")),
-        _ => Err(anyhow!("Invalid type of subsystem")),
-    }
-}
-
-#[cfg(feature = "kexpr")]
-pub fn dev_kexpr2addr(bus: &str, dev_name: &str, expr: &str) -> Result<usize> {
-    let prog = Program::new();
-    let sp = bus_to_subsys(&prog, bus)?;
+fn find_busdev(prog: &Program, bus: &str, dev_name: &str) -> Result<Object> {
+    let sp = bus_to_subsys(prog, bus)?;
     let sp_k_list = sp
         .deref_member("klist_devices")
         .ok_or(anyhow!("Fail to find member klist_devices"))?
@@ -216,15 +196,43 @@ pub fn dev_kexpr2addr(bus: &str, dev_name: &str, expr: &str) -> Result<usize> {
             .to_str()?;
 
         if device_name == dev_name {
-            let device = to_subsys_dev(bus, device)?;
-            if let Some(value) = find_expr_value(&device, expr) {
-                return Ok(value as usize);
-            }
+            return Ok(device);
         }
     }
 
-    Err(anyhow!("Invalid kexpr {expr}"))
+    Err(anyhow!("Fail to find {dev_name} on bus {bus}"))
 }
+
+#[cfg(feature = "kexpr")]
+macro_rules! define_dev_kexpr2addr {
+    ($fname: tt, $bus: literal, $struct: literal) => {
+        pub fn $fname(dev_name: &str, expr: &str) -> Result<usize> {
+            let prog = Program::new();
+            let busdev = find_busdev(&prog, $bus, dev_name)?;
+            let dev = busdev
+                .container_of($struct, "dev")
+                .ok_or(anyhow!("Fail to get data for device {dev_name}"))?;
+            if let Some(value) = find_expr_value(&dev, expr) {
+                return Ok(value as usize);
+            }
+
+            Err(anyhow!("Invalid {expr} for device {dev_name}"))
+        }
+    };
+}
+
+#[cfg(not(feature = "kexpr"))]
+macro_rules! define_dev_kexpr2addr {
+    ($fname: tt, $bus: literal, $struct: literal) => {
+        pub fn $fname(_dev_name: &str, _expr: &str) -> Result<usize> {
+            Err(anyhow!("kexpr is not configured"))
+        }
+    };
+}
+
+define_dev_kexpr2addr!(pcidev_kexpr2addr, "pci", "struct pci_dev");
+define_dev_kexpr2addr!(usbdev_kexpr2addr, "usb", "struct usb_device");
+define_dev_kexpr2addr!(platdev_kexpr2addr, "platform", "struct platform_device");
 
 #[cfg(not(feature = "kexpr"))]
 pub fn task_kexpr2addr(_pid: u64, _expr: &str) -> Result<usize> {
@@ -271,12 +279,38 @@ mod kexpr_tests {
 
     #[test]
     fn test_pcidev_kexpr() -> Result<()> {
-        let pci_devices = fs::read_dir("/sys/bus/pci/devices/").unwrap();
-        for pci_dev in pci_devices {
-            let dev_name = pci_dev.unwrap().file_name();
+        let devices = fs::read_dir("/sys/bus/pci/devices/").unwrap();
+        for dev in devices {
+            let dev_name = dev.unwrap().file_name();
             let dev = dev_name.to_str().unwrap();
             let expect = exec!(["--pci_dev", dev, "subsystem_vendor"]);
-            assert_eq!(expect, dev_kexpr2addr("pci", &dev, "subsystem_vendor")?);
+            assert_eq!(expect, pcidev_kexpr2addr(&dev, "subsystem_vendor")?);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_usbdev_kexpr() -> Result<()> {
+        let devices = fs::read_dir("/sys/bus/usb/devices/").unwrap();
+        for dev in devices {
+            let dev_name = dev.unwrap().file_name();
+            let dev = dev_name.to_str().unwrap();
+            let expect = exec!(["--usb_dev", dev, "devaddr"]);
+            assert_eq!(expect, usbdev_kexpr2addr(&dev, "devaddr")?);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_platdev_kexpr() -> Result<()> {
+        let devices = fs::read_dir("/sys/bus/platform/devices/").unwrap();
+        for dev in devices {
+            let dev_name = dev.unwrap().file_name();
+            let dev = dev_name.to_str().unwrap();
+            let expect = exec!(["--plat_dev", dev, "id"]);
+            assert_eq!(expect, platdev_kexpr2addr(&dev, "id")?);
         }
 
         Ok(())

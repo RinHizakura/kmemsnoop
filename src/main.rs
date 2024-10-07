@@ -93,7 +93,7 @@ fn parse_addr(bp: &BpType) -> Result<usize> {
     }
 
     if let Some(pci_dev) = pci_dev {
-        return dev_kexpr2addr("pci", &pci_dev, &expr);
+        return pcidev_kexpr2addr(&pci_dev, &expr);
     }
 
     if let Ok(addr) = hexstr2int(&expr) {

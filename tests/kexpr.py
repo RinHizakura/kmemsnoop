@@ -13,6 +13,8 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pid", type=int, help="pid of the task_struct")
     parser.add_argument("--pci_dev", type=str, help="name of the pci device")
+    parser.add_argument("--usb_dev", type=str, help="name of the usb device")
+    parser.add_argument("--plat_dev", type=str, help="name of the platform device")
     parser.add_argument("kexpr")
     args = parser.parse_args()
     return args
@@ -41,10 +43,10 @@ def busdev_kexpr2addr(bus, device, kexpr):
 args = get_args()
 pid = args.pid
 pci_dev = args.pci_dev
+usb_dev = args.usb_dev
+plat_dev = args.plat_dev
 kexpr = args.kexpr
 
-if not pid and not pci_dev:
-    exit(1)
 
 # If multiple kexpr is specified, only one
 # of it will be used by order
@@ -52,4 +54,10 @@ if pid:
     task_kexpr2addr(pid, kexpr)
 elif pci_dev:
     busdev_kexpr2addr("pci", pci_dev, kexpr)
+elif usb_dev:
+    busdev_kexpr2addr("usb", usb_dev, kexpr)
+elif plat_dev:
+    busdev_kexpr2addr("platform", plat_dev, kexpr)
+else:
+    exit(1)
 
