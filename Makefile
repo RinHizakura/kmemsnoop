@@ -1,29 +1,33 @@
 ARCH ?= $(shell uname -p)
 
 ifeq ($(ARCH), aarch64)
-	VMLINUX_DIR = vmlinux/arm64
 	LINKER = CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER
 	CROSS_COMPILE = aarch64-unknown-linux-gnu
 	EXPORT_PATH = $(LINKER)=$(CROSS_COMPILE)-gcc
 	CARGO_OPT = --target $(CROSS_COMPILE)
 else
-	VMLINUX_DIR = .
 	CROSS_COMPILE =
 	EXPORT_PATH =
 	CARGO_OPT =
+ifneq ("$(wildcard /sys/kernel/btf/vmlinux)", "")
+	VMLINUX_BTF = /sys/kernel/btf/vmlinux
+endif
 endif
 
 BUILD_FEATURE=
 
 ifeq ("$(wildcard /proc/kcore)", "")
-    BUILD_FEATURE += --no-default-features kexpr
+	BUILD_FEATURE += --no-default-features kexpr
+endif
+
+ifeq ($(VMLINUX_BTF), )
+	VMLINUX_BTF = vmlinux.btf
 endif
 
 OUT = target/$(CROSS_COMPILE)/debug
 
-# It is recommanded to build vmlinux.h from scratch by bpftool, but
-# here we use the prebuilt header in cross compilation for convenient.
-VMLINUX_H = $(VMLINUX_DIR)/vmlinux.h
+
+VMLINUX_H = vmlinux.h
 BIN = $(OUT)/kmemsnoop
 GIT_HOOKS := .git/hooks/applied
 SRCS = $(shell find ./bpf -name '*.c')
@@ -41,8 +45,14 @@ $(BIN): $(SRCS) $(VMLINUX_H)
 	git submodule update --init --recursive
 	$(EXPORT_PATH) cargo build $(BUILD_FEATURE) $(CARGO_OPT)
 
-$(VMLINUX_H):
-	bpftool btf dump file /sys/kernel/btf/vmlinux format c > $(VMLINUX_H)
+$(VMLINUX_BTF):
+ifeq ($(VMLINUX), )
+	$(error Please specific vmlinux with VMLINUX=)
+endif
+	pahole --btf_encode_detached $@ $(VMLINUX)
+
+$(VMLINUX_H): $(VMLINUX_BTF)
+	bpftool btf dump file $< format c > $@
 
 check:
 	sudo cat /sys/kernel/debug/tracing/trace_pipe
