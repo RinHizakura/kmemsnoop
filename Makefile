@@ -68,6 +68,9 @@ test:
 
 clean:
 	cargo clean
+	# TODO: This is workaround because the clean command for
+	# drgn-knight is incorrect
+	cd drgn-knight; make clean
 	$(RM) $(VMLINUX_H)
 	$(RM) vmlinux.btf
 
