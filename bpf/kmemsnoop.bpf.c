@@ -21,6 +21,7 @@ u64 MSG_ID = 0;
 
 static msg_ent_t *get_message(msg_type_t type)
 {
+    pid_t pid = (bpf_get_current_pid_tgid() >> 32);
     size_t total_size = sizeof(msg_ent_t);
 
     switch (type) {
@@ -39,6 +40,8 @@ static msg_ent_t *get_message(msg_type_t type)
     }
     ent->id = MSG_ID;
     ent->type = type;
+    ent->pid = pid;
+    bpf_get_current_comm(&ent->cmd, sizeof(ent->cmd));
 
     return ent;
 }
@@ -51,10 +54,12 @@ static void submit_message(msg_ent_t *ent)
 }
 
 SEC("perf_event")
-int perf_event_handler(UNUSED struct pt_regs *ctx)
+int perf_event_handler(struct bpf_perf_event_data *ctx)
 {
     msg_ent_t *ent;
     stack_msg_t *stack_msg;
+
+    bpf_printk("Address recorded on event: %llx", ctx->addr);
 
     ent = get_message(MSG_TYPE_STACK);
     if (!ent)
