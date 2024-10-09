@@ -1,5 +1,7 @@
 ARCH ?= $(shell uname -p)
 
+BUILD_FEATURE=
+
 ifeq ($(ARCH), aarch64)
 	LINKER = CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER
 	CROSS_COMPILE = aarch64-unknown-linux-gnu
@@ -9,15 +11,15 @@ else
 	CROSS_COMPILE =
 	EXPORT_PATH =
 	CARGO_OPT =
+
 ifneq ("$(wildcard /sys/kernel/btf/vmlinux)", "")
 	VMLINUX_BTF = /sys/kernel/btf/vmlinux
 endif
-endif
-
-BUILD_FEATURE=
 
 ifeq ("$(wildcard /proc/kcore)", "")
 	BUILD_FEATURE += --no-default-features kexpr
+endif
+
 endif
 
 ifeq ($(VMLINUX_BTF), )
@@ -25,7 +27,6 @@ ifeq ($(VMLINUX_BTF), )
 endif
 
 OUT = target/$(CROSS_COMPILE)/debug
-
 
 VMLINUX_H = vmlinux.h
 BIN = $(OUT)/kmemsnoop
