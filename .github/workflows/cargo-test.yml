@@ -14,8 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+
     - name: Get-submodule
       run: git submodule update --init --recursive
+
     - name: Install-dependencies
       run: |
           sudo apt-get update
@@ -30,22 +32,14 @@ jobs:
     - name: Create-vmlinux-h
       run: bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
 
-  test-normal:
-    needs: install
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Build
+    - name: Test-normal
       run: |
+        cargo clean
         cargo build --no-default-features kexpr
         sudo cargo test --target-dir test_build
 
-  test-kexpr:
-    needs: install
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Build
+    - name: Test-kexpr
       run: |
+        cargo clean
         cargo build
         sudo cargo test --target-dir test_build
