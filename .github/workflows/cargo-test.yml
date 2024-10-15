@@ -10,13 +10,20 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  test-normal:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
     - name: Build
-      run: make all
-    - name: Run tests
-      run: make test
+      run: |
+        cargo build --no-default-features kexpr
+        sudo cargo test --target-dir test_build
+
+  test-kexpr:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: |
+        cargo build
+        sudo cargo test --target-dir test_build
