@@ -16,7 +16,7 @@ struct MsgEnt {
     id: u64,
     typ: u64,
     pid: u64,
-    cmd: [c_char; TASK_COMM_LEN],
+    cmd: [u8; TASK_COMM_LEN],
 }
 unsafe impl Plain for MsgEnt {}
 

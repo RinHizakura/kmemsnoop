@@ -1,0 +1,59 @@
+name: cargo-test-kexpr
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Get-submodule
+      run: git submodule update --init --recursive
+
+    - name: Install-linux-dbgsym
+      run: |
+          NAME=$(lsb_release -c | awk  '{print $2}')
+          sudo tee /etc/apt/sources.list.d/ddebs.list << EOF
+          deb http://ddebs.ubuntu.com/ ${NAME} main restricted universe multiverse
+          deb http://ddebs.ubuntu.com/ ${NAME}-updates main restricted universe multiverse
+          EOF
+
+          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys C8CAB6595FDFF622
+          sudo apt-get update
+          sudo apt-get install linux-image-$(uname -r)-dbgsym
+
+    - name: Install-dependencies
+      run: |
+          sudo apt-get update
+          sudo apt install autoconf automake check gcc clang llvm liblzma-dev libelf-dev libdw-dev libtool make pkgconf python3 python3-dev python3-pip python3-setuptools zlib1g-dev
+
+    - name: Install-bpftool
+      run: |
+          git clone https://github.com/libbpf/bpftool.git
+          cd bpftool
+          git submodule update --init
+          cd src; make; sudo make install
+
+    - name: Install-drgn
+      run: |
+          git clone https://github.com/osandov/drgn.git
+          cd drgn
+          python3 setup.py build
+          sudo python3 setup.py install
+
+    - name: Create-vmlinux-h
+      run: bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
+
+    - name: Test
+      run: |
+        cargo clean
+        cargo build
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER='sudo -E' cargo test --target-dir test_build

@@ -18,7 +18,7 @@ ifeq ($(ARCH), )
 	CARGO_OPT =
 
 ifeq ("$(wildcard /proc/kcore)", "")
-	BUILD_FEATURE += --no-default-features kexpr
+	BUILD_FEATURE += --no-default-features
 endif
 
 ifneq ("$(wildcard /sys/kernel/btf/vmlinux)", "")
@@ -64,7 +64,7 @@ check:
 # FIXME: This will create file with super user permission. We
 # better avoid this if possible.
 test:
-	sudo cargo test --features kexpr --target-dir test_build
+	CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER='sudo -E' cargo test --target-dir test_build
 
 clean:
 	cargo clean

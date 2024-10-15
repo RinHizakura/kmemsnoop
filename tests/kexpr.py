@@ -59,5 +59,6 @@ elif usb_dev:
 elif plat_dev:
     busdev_kexpr2addr("platform", plat_dev, kexpr)
 else:
+    print(f"Invalid arguments {args}")
     exit(1)
 

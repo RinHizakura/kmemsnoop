@@ -1,4 +1,4 @@
-name: Rust
+name: cargo-test
 
 on:
   push:
@@ -22,6 +22,7 @@ jobs:
       run: |
           sudo apt-get update
           sudo apt-get install clang llvm libelf1 libelf-dev zlib1g-dev
+
     - name: Install-bpftool
       run: |
           git clone https://github.com/libbpf/bpftool.git
@@ -32,14 +33,8 @@ jobs:
     - name: Create-vmlinux-h
       run: bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
 
-    - name: Test-normal
+    - name: Test
       run: |
         cargo clean
-        cargo build --no-default-features kexpr
-        sudo cargo test --target-dir test_build
-
-    - name: Test-kexpr
-      run: |
-        cargo clean
-        cargo build
-        sudo cargo test --target-dir test_build
+        cargo build --no-default-features
+        cargo test --no-default-features --target-dir test_build

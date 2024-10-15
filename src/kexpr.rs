@@ -254,7 +254,6 @@ mod kexpr_tests {
                 &String::from_utf8(
                     Command::new("./tests/kexpr.py")
                         .args($args)
-                        .stdout(Stdio::piped())
                         .output()
                         .expect("Fail to execute kexpr")
                         .stdout,
