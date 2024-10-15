@@ -71,7 +71,6 @@ After the installation of these dependencies, you should be able to build
 `kmemsnoop` now.
 
 ```
-# Build for kernel symbol and address expression only
 $ make
 ```
 
