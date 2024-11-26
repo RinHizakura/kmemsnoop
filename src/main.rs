@@ -76,6 +76,12 @@ struct Cli {
 
     #[arg(long, help = "kexpr: 'sturct pci_dev' from the device name")]
     pci_dev: Option<String>,
+
+    #[arg(long, help = "kexpr: 'sturct usb_device' from the device name")]
+    usb_dev: Option<String>,
+
+    #[arg(long, help = "kexpr: 'sturct platform_device' from the device name")]
+    plat_dev: Option<String>,
 }
 
 fn parse_addr(bp: &BpType) -> Result<usize> {
@@ -83,6 +89,8 @@ fn parse_addr(bp: &BpType) -> Result<usize> {
     let expr = cli.expr;
     let pid_task = cli.pid_task;
     let pci_dev = cli.pci_dev;
+    let usb_dev = cli.usb_dev;
+    let plat_dev = cli.plat_dev;
     let vmlinux = cli.vmlinux;
 
     /* Use kexpr if special option is specified.
@@ -94,6 +102,14 @@ fn parse_addr(bp: &BpType) -> Result<usize> {
 
     if let Some(pci_dev) = pci_dev {
         return pcidev_kexpr2addr(&pci_dev, &expr);
+    }
+
+    if let Some(usb_dev) = usb_dev {
+        return usbdev_kexpr2addr(&usb_dev, &expr);
+    }
+
+    if let Some(plat_dev) = plat_dev {
+        return platdev_kexpr2addr(&plat_dev, &expr);
     }
 
     if let Ok(addr) = hexstr2int(&expr) {
