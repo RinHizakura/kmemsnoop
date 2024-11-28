@@ -27,6 +27,10 @@ static msg_ent_t *get_message(msg_type_t type)
     switch (type) {
     case MSG_TYPE_STACK:
         total_size += sizeof(stack_msg_t);
+        break;
+    case MSG_TYPE_DATA:
+        total_size += sizeof(data_msg_t);
+        break;
     default:
         break;
     }
@@ -53,17 +57,14 @@ static void submit_message(msg_ent_t *ent)
     bpf_ringbuf_submit(ent, 0);
 }
 
-SEC("perf_event")
-int perf_event_handler(struct bpf_perf_event_data *ctx)
+static void submit_msg_stack(struct bpf_perf_event_data *ctx)
 {
     msg_ent_t *ent;
     stack_msg_t *stack_msg;
 
-    bpf_printk("Address recorded on event: %llx", ctx->addr);
-
     ent = get_message(MSG_TYPE_STACK);
     if (!ent)
-        return -1;
+        return;
 
     stack_msg = GET_INNER_MSG(ent, stack_msg_t);
 
@@ -71,6 +72,36 @@ int perf_event_handler(struct bpf_perf_event_data *ctx)
         bpf_get_stack(ctx, stack_msg->kstack, sizeof(stack_msg->kstack), 0);
 
     submit_message(ent);
+}
+
+static void submit_msg_data(struct bpf_perf_event_data *ctx)
+{
+    msg_ent_t *ent;
+    data_msg_t *data_msg;
+    void *data_ptr = (void *) ctx->addr;
+
+    ent = get_message(MSG_TYPE_DATA);
+    if (!ent)
+        return;
+
+    data_msg = GET_INNER_MSG(ent, data_msg_t);
+
+    data_msg->addr = ctx->addr;
+    /* FIXME: We have no idea for the valid size of the watchpoint here,
+     * so just read 8 bytes to the userspace. Will this be an unsafe
+     * operation? */
+    if (data_ptr)
+        bpf_core_read(&data_msg->val, sizeof(u64), data_ptr);
+
+    submit_message(ent);
+}
+
+SEC("perf_event")
+int perf_event_handler(struct bpf_perf_event_data *ctx)
+{
+    submit_msg_stack(ctx);
+    submit_msg_data(ctx);
+
     return 0;
 }
 

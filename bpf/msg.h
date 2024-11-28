@@ -9,6 +9,7 @@
 
 typedef enum {
     MSG_TYPE_STACK = 0,
+    MSG_TYPE_DATA,
 } msg_type_t;
 
 #define TASK_COMM_LEN 16
@@ -29,8 +30,8 @@ typedef struct {
 } stack_msg_t;
 
 typedef struct {
-    u64 address;
-    u64 value;
-} watchpoint_msg_t;
+    u64 addr;
+    u64 val;
+} data_msg_t;
 
 #endif

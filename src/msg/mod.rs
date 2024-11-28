@@ -1,14 +1,16 @@
+mod data;
 mod stack;
 
 use std::mem::size_of;
 
+use crate::msg::data::data_msg_handler;
 use crate::msg::stack::stack_msg_handler;
 use crate::utils::cast;
 
-use libc::c_char;
 use plain::Plain;
 
 const MSG_TYPE_STACK: u64 = 0;
+const MSG_TYPE_DATA: u64 = 1;
 const TASK_COMM_LEN: usize = 16;
 
 #[repr(C)]
@@ -55,6 +57,7 @@ pub fn msg_handler(bytes: &[u8]) -> i32 {
 
     match ent.typ {
         MSG_TYPE_STACK => stack_msg_handler(inner),
+        MSG_TYPE_DATA => data_msg_handler(inner),
         _ => panic!("Invalid message with wrong type"),
     }
 }
