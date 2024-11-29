@@ -173,7 +173,7 @@ fn main() -> Result<()> {
     let (bp_type, bp_len) = parse_bp();
     let addr = parse_addr(bp_type)?;
 
-    println!("Watchpoint attached on {addr:x} {bp_type}/{bp_len}");
+    println!("Watchpoint attached on {addr:x}");
 
     /* We may have to bump RLIMIT_MEMLOCK for libbpf explicitly */
     if cfg!(bump_memlock_rlimit_manually) {
