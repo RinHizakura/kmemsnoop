@@ -121,15 +121,14 @@ device with name `PLAT_DEV`. Check `/sys/bus/platform/devices/` for the valid na
 
 ### Examples
 
-For example, if you want to trace the execution of kernel function
-`schduler_tick()`:
+If you want to trace the execution of kernel function `schduler_tick()`.
 
 ```
 $ sudo kmemsnoop x8 scheduler_tick
 ```
 
-If you want to trace the read and write access for kernel parameters
-`sysctl_sched_cfs_bandwidth_slice`:
+If you want to trace the read and write access for kernel variable
+`sysctl_sched_cfs_bandwidth_slice`.
 
 ```
 $ sudo kmemsnoop rw4 sysctl_sched_cfs_bandwidth_slice -v vmlinux
@@ -139,21 +138,21 @@ $ cat /proc/sys/kernel/sched_cfs_bandwidth_slice_us
 ```
 
 If you want to watch the object under `struct task_struct`, for example, the
-`&task->on_rq` of task pid 1:
+`&task->on_rq` of task pid 1.
 
 ```
 $ sudo kmemsnoop --pid-task 1 rw4 on_rq
 ```
 
 
-If you want to watch the object point by a pointer under `task_struct` instead,
-for example, the `task->parent` of task pid 1:
+If you want to watch the object point by a pointer under `task_struct`(not the
+pointer itself), for example, the `task->parent` of task pid 1.
 
 ```
 $ sudo kmemsnoop --pid-task 1 rw8 *parent
 ```
 
-If you want to watch the field inside the struct in `task_struct`. For example
+If you want to watch the field inside the struct in `task_struct`, for example,
 `&task->se.nr_migrations`.
 
 ```
@@ -161,14 +160,14 @@ $ sudo kmemsnoop --pid-task 1 rw8 se.nr_migrations
 ```
 
 If you want to watch the field inside the struct which can be referenced from
-the `task_struct`. For example `&task->mm->task_size`.
+the `task_struct`, for example, `&task->mm->task_size`.
 
 ```
 $ sudo kmemsnoop --pid-task 1 rw8 "mm->task_size"
 ```
 
 If you want to trace the field `vendor` under `struct pci_dev` for PCI device
-`0001:00:00.0`:
+`0001:00:00.0`.
 
 ```
 $ sudo kmemsnoop --pci-dev 0000:00:00.0 rw2 vendor
