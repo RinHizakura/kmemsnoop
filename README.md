@@ -164,7 +164,7 @@ If you want to watch the field inside the struct which can be referenced from
 the `task_struct`. For example `&task->mm->task_size`.
 
 ```
-$ sudo kmemsnoop --pid-task 1 rw8 mm->task_size
+$ sudo kmemsnoop --pid-task 1 rw8 "mm->task_size"
 ```
 
 If you want to trace the field `vendor` under `struct pci_dev` for PCI device
