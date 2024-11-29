@@ -145,11 +145,19 @@ If you want to trace the object under `struct task_struct`, for example, the
 $ sudo kmemsnoop --pid-task 1 rw4 on_rq
 ```
 
+
 If you want to trace the pointer under `task_struct` instead, for example,
 the `task->parent` of task pid 1:
 
 ```
 $ sudo kmemsnoop --pid-task 1 rw8 *parent
+```
+
+If you want to trace the member inside another struct in `task_struct`. For example
+`nr_migrations` in `sched_entity`.
+
+```
+$ sudo kmemsnoop --pid-task 1 rw8 se.nr_migrations
 ```
 
 If you want to trace the field `vendor` under `struct pci_dev` for PCI device
