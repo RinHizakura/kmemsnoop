@@ -87,35 +87,37 @@ Arguments:
 
 Options:
   -v, --vmlinux <VMLINUX>    vmlinux path of running kernel(need nokaslr)
-  -p, --pid-task <PID_TASK>  kexpr: use 'struct task_struct' from pid
+      --pid-task <PID_TASK>  kexpr: use 'struct task_struct' from pid
+      --pci-dev <PCI_DEV>    kexpr: 'sturct pci_dev' from the device name
+      --usb-dev <USB_DEV>    kexpr: 'sturct usb_device' from the device name
+      --plat-dev <PLAT_DEV>  kexpr: 'sturct platform_device' from the device name
   -h, --help                 Print help
 ```
 
-* `EXPR` is the expression to describe the watchpoint. Without "special option"
-(e.g. `-p`), it can be the name of kernel symbol or addess value in hex. If
-using the special option, it is the expression dereference from the
+* `EXPR` is the expression to describe the watchpoint. If not using the "kexpr"
+options(e.g. `--pid-task`), it can be the name of kernel symbol or addess value
+in hex. If using the "kexpr", it is the expression dereferenced from the
 given structure according the option.
 * `BP` is the type of watchpoint. For example, r8 means to watch a read
-opperation from the base of `SYMBOL` with 8 bytes length.
+operation from the base of `EXPR` with 8 bytes length.
 
 Options:
 * `VMLINUX` is the path of `vmlinux` file for getting the address of kernel
-symbol instead of using `/proc/kallsyms`.
-* `PID_TASK` enables to use kexpr on `EXPR`. This allow you to access
-the field which is dereference from a `struct task_struct`
-by `EXPR` as watchpoint. The `struct task_struct` comes from the task whose
-pid is `PID_TASK`.
-
-Since `kmemsnoop` relies on eBPF to collect kernel informations, it needs to be
-run as root. The type and the symbol/address to attach the breakpoint must
-be required as command line arguments.
-
-The related vmlinux file for the running kernel is optional. If you don't give
-it to `kmemsnoop`, `kmemsnoop` will fallback to find address of the symbol from
-`/proc/kallsyms` which may only have a limited subset of symbol information.
-Besides, you need to add `nokaslr` to kernel bootargs when using vmlinux for
-symbol information, because the address on specific kernel symbol will be
+symbol instead of using `/proc/kallsyms`. To use this option, you need to
+add `nokaslr` to kernel bootargs because the address on kernel symbol will be
 random without it.
+* `PID_TASK` allows you to watch the field which is dereferenced from a
+`struct task_struct` by `EXPR`. The `struct task_struct` comes from the task
+whose pid is `PID_TASK`.
+* `PCI_DEV` allows you to watch the field which is dereferenced from a
+`struct pci_dev` by `EXPR`. The `struct pci_dev` comes from the device with
+name `PCI_DEV`. Check `/sys/bus/pci/devices/` for the valid name.
+* `USB_DEV` allows you to watch the field which is dereferenced from a
+`struct usb_device` by `EXPR`. The `struct usb_device` comes from the device with
+name `USB_DEV`. Check `/sys/bus/usb/devices/` for the valid name.
+* `PLAT_DEV` allows you to watch the field which is dereferenced from a
+`struct platform_device` by `EXPR`. The `struct platform_device` comes from the
+device with name `PLAT_DEV`. Check `/sys/bus/platform/devices/` for the valid name.
 
 ### Examples
 
@@ -140,16 +142,22 @@ If you want to trace the object under `struct task_struct`, for example, the
 `&task->on_rq` of task pid 1:
 
 ```
-$ sudo kmemsnoop -p 1 rw4 on_rq
+$ sudo kmemsnoop --pid-task 1 rw4 on_rq
 ```
 
 If you want to trace the pointer under `task_struct` instead, for example,
 the `task->parent` of task pid 1:
 
 ```
-$ sudo kmemsnoop -p 1 rw8 *parent
+$ sudo kmemsnoop --pid-task 1 rw8 *parent
 ```
 
-Currently, only the stack backtrace is showed when hitting the watchpoint. Any
-requirement for the extra kernel information that you would like to see are
-welcome to comment!
+If you want to trace the field `vendor` under `struct pci_dev` for PCI device
+`0001:00:00.0`:
+
+```
+$ sudo kmemsnoop --pci-dev 0000:00:00.0 rw2 vendor
+
+# You can run the following command to trigger the watchpoint!
+$ cat /sys/bus/pci/devices/0000:00:00.0/vendor
+```
