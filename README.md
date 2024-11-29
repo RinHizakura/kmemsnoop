@@ -138,7 +138,7 @@ $ sudo kmemsnoop rw4 sysctl_sched_cfs_bandwidth_slice -v vmlinux
 $ cat /proc/sys/kernel/sched_cfs_bandwidth_slice_us
 ```
 
-If you want to trace the object under `struct task_struct`, for example, the
+If you want to watch the object under `struct task_struct`, for example, the
 `&task->on_rq` of task pid 1:
 
 ```
@@ -146,18 +146,25 @@ $ sudo kmemsnoop --pid-task 1 rw4 on_rq
 ```
 
 
-If you want to trace the pointer under `task_struct` instead, for example,
-the `task->parent` of task pid 1:
+If you want to watch the object point by a pointer under `task_struct` instead,
+for example, the `task->parent` of task pid 1:
 
 ```
 $ sudo kmemsnoop --pid-task 1 rw8 *parent
 ```
 
-If you want to trace the member inside another struct in `task_struct`. For example
-`nr_migrations` in `sched_entity`.
+If you want to watch the field inside the struct in `task_struct`. For example
+`&task->se.nr_migrations`.
 
 ```
 $ sudo kmemsnoop --pid-task 1 rw8 se.nr_migrations
+```
+
+If you want to watch the field inside the struct which can be referenced from
+the `task_struct`. For example `&task->mm->task_size`.
+
+```
+$ sudo kmemsnoop --pid-task 1 rw8 mm->task_size
 ```
 
 If you want to trace the field `vendor` under `struct pci_dev` for PCI device
