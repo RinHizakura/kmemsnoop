@@ -12,6 +12,9 @@
 #include "msg.h"
 #include "utils.h"
 
+const volatile u32 bp_type;
+const volatile u64 bp_len;
+
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 4096);
@@ -80,6 +83,11 @@ static void submit_msg_data(struct bpf_perf_event_data *ctx)
     data_msg_t *data_msg;
     void *data_ptr = (void *) ctx->addr;
 
+    /* Don't share this type of message if this is an
+     * executable point */
+    if (bp_type == HW_BREAKPOINT_X)
+        return;
+
     ent = get_message(MSG_TYPE_DATA);
     if (!ent)
         return;
@@ -87,11 +95,8 @@ static void submit_msg_data(struct bpf_perf_event_data *ctx)
     data_msg = GET_INNER_MSG(ent, data_msg_t);
 
     data_msg->addr = ctx->addr;
-    /* FIXME: We have no idea for the valid size of the watchpoint here,
-     * so just read 8 bytes to the userspace. Will this be an unsafe
-     * operation? */
     if (data_ptr)
-        bpf_core_read(&data_msg->val, sizeof(u64), data_ptr);
+        bpf_core_read(&data_msg->val, bp_len, data_ptr);
 
     submit_message(ent);
 }

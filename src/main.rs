@@ -1,3 +1,4 @@
+use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -6,7 +7,7 @@ use crate::bump_memlock_rlimit::*;
 use crate::kexpr::*;
 use crate::ksym::{KSymResolver, KSYM_FUNC};
 use crate::msg::*;
-use crate::perf::{attach_breakpoint, BpType};
+use crate::perf::attach_breakpoint;
 use crate::utils::hexstr2int;
 
 use ksym::KSYM_DATA;
@@ -15,6 +16,10 @@ use libbpf_rs::RingBufferBuilder;
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
+
+use perf_event_open_sys::bindings::{
+    HW_BREAKPOINT_R, HW_BREAKPOINT_RW, HW_BREAKPOINT_W, HW_BREAKPOINT_X,
+};
 
 use blazesym::inspect;
 use blazesym::inspect::Inspector;
@@ -47,11 +52,31 @@ fn vmlinux2addr(sym: &str, vmlinux: &str) -> Result<usize> {
     Ok(addr)
 }
 
-fn ksym2addr(sym: &str, bp: &BpType) -> Result<usize> {
+#[derive(clap::ValueEnum, Clone)]
+enum BpType {
+    R1,
+    W1,
+    RW1,
+    X1,
+    R2,
+    W2,
+    RW2,
+    X2,
+    R4,
+    W4,
+    RW4,
+    X4,
+    R8,
+    W8,
+    RW8,
+    X8,
+}
+
+fn ksym2addr(sym: &str, bp: u32) -> Result<usize> {
     let kresolver = KSymResolver::new();
 
     let sym_typ = match bp {
-        BpType::X1 | BpType::X2 | BpType::X4 | BpType::X8 => KSYM_FUNC,
+        HW_BREAKPOINT_X => KSYM_FUNC,
         _ => KSYM_DATA,
     };
 
@@ -84,7 +109,7 @@ struct Cli {
     plat_dev: Option<String>,
 }
 
-fn parse_addr(bp: &BpType) -> Result<usize> {
+fn parse_addr(bp_type: u32) -> Result<usize> {
     let cli = Cli::parse();
     let expr = cli.expr;
     let pid_task = cli.pid_task;
@@ -121,45 +146,62 @@ fn parse_addr(bp: &BpType) -> Result<usize> {
         return vmlinux2addr(&expr, &vmlinux);
     }
 
-    ksym2addr(&expr, &bp)
+    ksym2addr(&expr, bp_type)
 }
 
-fn parse_bp() -> BpType {
+fn parse_bp() -> (u32, u64) {
     let cli = Cli::parse();
-    cli.bp
+    let bp = cli.bp;
+
+    let bp_len = match bp {
+        BpType::R1 | BpType::W1 | BpType::RW1 | BpType::X1 => 1,
+        BpType::R2 | BpType::W2 | BpType::RW2 | BpType::X2 => 2,
+        BpType::R4 | BpType::W4 | BpType::RW4 | BpType::X4 => 4,
+        BpType::R8 | BpType::W8 | BpType::RW8 | BpType::X8 => 8,
+    };
+    let bp_type = match bp {
+        BpType::X1 | BpType::X2 | BpType::X4 | BpType::X8 => HW_BREAKPOINT_X,
+        BpType::R1 | BpType::R2 | BpType::R4 | BpType::R8 => HW_BREAKPOINT_R,
+        BpType::W1 | BpType::W2 | BpType::W4 | BpType::W8 => HW_BREAKPOINT_W,
+        BpType::RW1 | BpType::RW2 | BpType::RW4 | BpType::RW8 => HW_BREAKPOINT_RW,
+    };
+
+    (bp_type, bp_len)
 }
 
-fn load_ebpf_prog() -> Result<KmemsnoopSkel<'static>> {
+fn main() -> Result<()> {
+    let (bp_type, bp_len) = parse_bp();
+    let addr = parse_addr(bp_type)?;
+
+    println!("Watchpoint attached on {addr:x} {bp_type}/{bp_len}");
+
     /* We may have to bump RLIMIT_MEMLOCK for libbpf explicitly */
     if cfg!(bump_memlock_rlimit_manually) {
         bump_memlock_rlimit()?;
     }
 
+    let mut open_object = MaybeUninit::uninit();
     let builder = KmemsnoopSkelBuilder::default();
     /* Open BPF application */
-    let open_skel = builder.open()?;
+    let open_skel = builder.open(&mut open_object)?;
+
+    open_skel.maps.rodata_data.bp_type = bp_type;
+    open_skel.maps.rodata_data.bp_len = bp_len;
+
     /* Load & verify BPF programs */
-    open_skel.load().map_err(anyhow::Error::msg)
-}
-
-fn main() -> Result<()> {
-    let bp = parse_bp();
-    let addr = parse_addr(&bp)?;
-
-    println!("Watchpoint attached on {addr:x}");
-
-    let mut skel = load_ebpf_prog()?;
+    let mut skel = open_skel.load()?;
     let _ = skel.attach()?;
 
-    let mut progs = skel.progs_mut();
-    let prog = progs.perf_event_handler();
+    let progs = skel.progs;
+    let mut prog = progs.perf_event_handler;
+
     /* The link should be hold to represent the lifetime of
      * breakpoint. */
-    let _link = attach_breakpoint(addr, bp, prog)?;
+    let _link = attach_breakpoint(addr, bp_type, bp_len, &mut prog)?;
 
     let mut builder = RingBufferBuilder::new();
-    let binding = skel.maps();
-    builder.add(binding.msg_ringbuf(), msg_handler)?;
+    let msg_ringbuf = skel.maps.msg_ringbuf;
+    builder.add(&msg_ringbuf, msg_handler)?;
     let msg = builder.build()?;
 
     let running = Arc::new(AtomicBool::new(true));

@@ -5,13 +5,10 @@ use std::mem::size_of;
 
 use anyhow::{anyhow, Result};
 use libbpf_rs::libbpf_sys::PERF_FLAG_FD_CLOEXEC;
-use libbpf_rs::{Link, Program};
+use libbpf_rs::{Link, ProgramMut};
 use libc::{c_int, pid_t};
 
-use perf_event_open_sys::bindings::{
-    perf_event_attr, HW_BREAKPOINT_R, HW_BREAKPOINT_RW, HW_BREAKPOINT_W, HW_BREAKPOINT_X,
-    PERF_SAMPLE_CALLCHAIN, PERF_TYPE_BREAKPOINT,
-};
+use perf_event_open_sys::bindings::{perf_event_attr, PERF_SAMPLE_CALLCHAIN, PERF_TYPE_BREAKPOINT};
 use perf_event_open_sys::perf_event_open;
 
 fn attach_perf_event(
@@ -19,7 +16,7 @@ fn attach_perf_event(
     pid: pid_t,
     cpu: c_int,
     group_fd: c_int,
-    prog: &mut Program,
+    prog: &mut ProgramMut,
 ) -> Result<Link> {
     let efd = unsafe {
         perf_event_open(
@@ -42,43 +39,18 @@ fn attach_perf_event(
     Ok(link)
 }
 
-#[derive(clap::ValueEnum, Clone)]
-pub enum BpType {
-    R1,
-    W1,
-    RW1,
-    X1,
-    R2,
-    W2,
-    RW2,
-    X2,
-    R4,
-    W4,
-    RW4,
-    X4,
-    R8,
-    W8,
-    RW8,
-    X8,
-}
-
-pub fn attach_breakpoint(symbol_addr: usize, bp: BpType, prog: &mut Program) -> Result<Vec<Link>> {
+pub fn attach_breakpoint(
+    symbol_addr: usize,
+    bp_type: u32,
+    bp_len: u64,
+    prog: &mut ProgramMut,
+) -> Result<Vec<Link>> {
     let mut attr = perf_event_attr::default();
     attr.size = size_of::<perf_event_attr>() as u32;
     attr.type_ = PERF_TYPE_BREAKPOINT;
     attr.__bindgen_anon_3.bp_addr = symbol_addr as u64;
-    attr.__bindgen_anon_4.bp_len = match bp {
-        BpType::R1 | BpType::W1 | BpType::RW1 | BpType::X1 => 1,
-        BpType::R2 | BpType::W2 | BpType::RW2 | BpType::X2 => 2,
-        BpType::R4 | BpType::W4 | BpType::RW4 | BpType::X4 => 4,
-        BpType::R8 | BpType::W8 | BpType::RW8 | BpType::X8 => 8,
-    };
-    attr.bp_type = match bp {
-        BpType::X1 | BpType::X2 | BpType::X4 | BpType::X8 => HW_BREAKPOINT_X,
-        BpType::R1 | BpType::R2 | BpType::R4 | BpType::R8 => HW_BREAKPOINT_R,
-        BpType::W1 | BpType::W2 | BpType::W4 | BpType::W8 => HW_BREAKPOINT_W,
-        BpType::RW1 | BpType::RW2 | BpType::RW4 | BpType::RW8 => HW_BREAKPOINT_RW,
-    };
+    attr.__bindgen_anon_4.bp_len = bp_len;
+    attr.bp_type = bp_type;
     // response to every event
     attr.__bindgen_anon_1.sample_period = 1;
     attr.__bindgen_anon_2.wakeup_events = 1;

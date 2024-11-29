@@ -10,7 +10,7 @@ drgn-knight = { path = "./drgn-knight", optional = true }
 anyhow = "1.0.82"
 ctrlc = "3.1"
 libc = "0.2.154"
-libbpf-rs = "0.23.0"
+libbpf-rs = "0.24.8"
 perf-event-open-sys2 = "5.0.3"
 plain = "0.2.3"
 blazesym = "0.2.0-alpha.12"
@@ -18,7 +18,7 @@ clap = { version = "4.5.4", features = ["derive"] }
 
 [build-dependencies]
 anyhow = "1.0.82"
-libbpf-cargo = "0.23.0"
+libbpf-cargo = "0.24.8"
 
 [features]
 default = ["kexpr"]
