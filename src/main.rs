@@ -99,13 +99,13 @@ struct Cli {
     #[arg(long, help = "kexpr: use 'struct task_struct' from pid")]
     pid_task: Option<u64>,
 
-    #[arg(long, help = "kexpr: 'sturct pci_dev' from the device name")]
+    #[arg(long, help = "kexpr: 'struct pci_dev' from the device name")]
     pci_dev: Option<String>,
 
-    #[arg(long, help = "kexpr: 'sturct usb_device' from the device name")]
+    #[arg(long, help = "kexpr: 'struct usb_device' from the device name")]
     usb_dev: Option<String>,
 
-    #[arg(long, help = "kexpr: 'sturct platform_device' from the device name")]
+    #[arg(long, help = "kexpr: 'struct platform_device' from the device name")]
     plat_dev: Option<String>,
 }
 

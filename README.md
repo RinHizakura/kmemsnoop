@@ -40,7 +40,7 @@ CONFIG_KALLSYMS_ALL=y
 
 (Optional) `kmemsnoop` tool support a special type of expression called
 **kexpr**. It allows you to access specific kind of object in the kernel(e.g.
-a `sturct task_struct` from task pid), and set watchpoint on the object member
+a `struct task_struct` from task pid), and set watchpoint on the object member
 with the given expression. In order to use this feature, you need to enable
 `/proc/kcore` to make access the kernel objects possible.
 
@@ -88,9 +88,9 @@ Arguments:
 Options:
   -v, --vmlinux <VMLINUX>    vmlinux path of running kernel(need nokaslr)
       --pid-task <PID_TASK>  kexpr: use 'struct task_struct' from pid
-      --pci-dev <PCI_DEV>    kexpr: 'sturct pci_dev' from the device name
-      --usb-dev <USB_DEV>    kexpr: 'sturct usb_device' from the device name
-      --plat-dev <PLAT_DEV>  kexpr: 'sturct platform_device' from the device name
+      --pci-dev <PCI_DEV>    kexpr: 'struct pci_dev' from the device name
+      --usb-dev <USB_DEV>    kexpr: 'struct usb_device' from the device name
+      --plat-dev <PLAT_DEV>  kexpr: 'struct platform_device' from the device name
   -h, --help                 Print help
 ```
 
