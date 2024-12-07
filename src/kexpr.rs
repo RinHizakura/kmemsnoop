@@ -4,10 +4,11 @@ use anyhow::{anyhow, Result};
 use drgn_knight::*;
 
 #[cfg(feature = "kexpr")]
+#[derive(Debug)]
 enum Token {
     Member(String),
     Access,
-    Valof,
+    AddrOf,
     Deref,
 }
 
@@ -38,7 +39,7 @@ impl Lexer {
             self.pos += 1;
             match c {
                 b'.' => return Some(Token::Access),
-                b'*' => return Some(Token::Valof),
+                b'&' => return Some(Token::AddrOf),
                 b'-' => {
                     if self.pos >= self.len || s[self.pos] != b'>' {
                         return None;
@@ -76,24 +77,27 @@ enum TokenType {
 #[cfg(feature = "kexpr")]
 fn find_expr_value(obj: &Object, expr: &str) -> Option<u64> {
     let mut lexer = Lexer::new(expr.to_string());
-    let mut value_of = false;
+    let mut addr_of = false;
 
-    /* The First token should be Token::Member or Token::Valof, and
+    /* The First token should be Token::Member or Token::AddrOf, and
      * we need the first member here. */
     let mut cur_obj = None;
     while let Some(token) = lexer.next_token() {
         match token {
-            Token::Valof => {
-                if value_of {
+            Token::AddrOf => {
+                if addr_of {
                     return None;
                 }
-                value_of = true;
+                addr_of = true;
             }
             Token::Member(member) => {
                 cur_obj = obj.deref_member(&member);
                 break;
             }
-            _ => return None,
+            _ => {
+                println!("Invalid token {token:?}");
+                return None;
+            }
         }
     }
 
@@ -126,10 +130,10 @@ fn find_expr_value(obj: &Object, expr: &str) -> Option<u64> {
         }
     }
 
-    if value_of {
-        cur_obj.to_num().ok()
-    } else {
+    if addr_of {
         cur_obj.address_of()?.to_num().ok()
+    } else {
+        cur_obj.to_num().ok()
     }
 }
 
