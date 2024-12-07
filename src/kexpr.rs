@@ -250,7 +250,7 @@ mod kexpr_tests {
     use crate::hexstr2int;
     use anyhow::Result;
     use std::fs;
-    use std::process::{Command, Stdio};
+    use std::process::Command;
 
     macro_rules! exec {
         ($args:expr) => {
@@ -272,10 +272,10 @@ mod kexpr_tests {
 
     #[test]
     fn test_task_struct_kexpr() -> Result<()> {
-        let expect = exec!(["--pid", "1", "on_rq"]);
-        assert_eq!(expect, task_kexpr2addr(1, "on_rq")?);
-        let expect = exec!(["--pid", "1", "*parent"]);
-        assert_eq!(expect, task_kexpr2addr(1, "*parent")?);
+        let expect = exec!(["--pid", "1", "&on_rq"]);
+        assert_eq!(expect, task_kexpr2addr(1, "&on_rq")?);
+        let expect = exec!(["--pid", "1", "parent"]);
+        assert_eq!(expect, task_kexpr2addr(1, "parent")?);
 
         Ok(())
     }
@@ -286,8 +286,8 @@ mod kexpr_tests {
         for dev in devices {
             let dev_name = dev.unwrap().file_name();
             let dev = dev_name.to_str().unwrap();
-            let expect = exec!(["--pci_dev", dev, "subsystem_vendor"]);
-            assert_eq!(expect, pcidev_kexpr2addr(&dev, "subsystem_vendor")?);
+            let expect = exec!(["--pci_dev", dev, "&subsystem_vendor"]);
+            assert_eq!(expect, pcidev_kexpr2addr(&dev, "&subsystem_vendor")?);
         }
 
         Ok(())
@@ -299,8 +299,8 @@ mod kexpr_tests {
         for dev in devices {
             let dev_name = dev.unwrap().file_name();
             let dev = dev_name.to_str().unwrap();
-            let expect = exec!(["--usb_dev", dev, "devaddr"]);
-            assert_eq!(expect, usbdev_kexpr2addr(&dev, "devaddr")?);
+            let expect = exec!(["--usb_dev", dev, "&devaddr"]);
+            assert_eq!(expect, usbdev_kexpr2addr(&dev, "&devaddr")?);
         }
 
         Ok(())
@@ -312,8 +312,8 @@ mod kexpr_tests {
         for dev in devices {
             let dev_name = dev.unwrap().file_name();
             let dev = dev_name.to_str().unwrap();
-            let expect = exec!(["--plat_dev", dev, "id"]);
-            assert_eq!(expect, platdev_kexpr2addr(&dev, "id")?);
+            let expect = exec!(["--plat_dev", dev, "&id"]);
+            assert_eq!(expect, platdev_kexpr2addr(&dev, "&id")?);
         }
 
         Ok(())

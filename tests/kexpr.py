@@ -20,10 +20,10 @@ def get_args():
     return args
 
 def parse_kexpr(obj, kexpr):
-    if kexpr[0] == "*":
-        print(eval(f"hex(obj.{kexpr[1:]})"))
+    if kexpr[0] == "&":
+        print(eval(f"hex(obj.{kexpr[1:]}.address_)"))
     else:
-        print(eval(f"hex(obj.{kexpr}.address_)"))
+        print(eval(f"hex(obj.{kexpr})"))
 
 def task_kexpr2addr(pid, kexpr):
     task = find_task(pid)
