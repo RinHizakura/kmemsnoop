@@ -3,7 +3,7 @@ use crate::utils::cast;
 use std::mem::size_of;
 
 use blazesym::symbolize::Sym;
-use blazesym::symbolize::{Input, Kernel, Source, Symbolized, Symbolizer};
+use blazesym::symbolize::{CodeInfo, Input, Kernel, Source, Symbolized, Symbolizer};
 use blazesym::Addr;
 
 use plain::Plain;
@@ -20,14 +20,34 @@ unsafe impl Plain for StackMsg {}
 
 const ADDR_WIDTH: usize = 16;
 
-fn print_frame(name: &str, addr_info: Option<(Addr, Addr, usize)>) {
+fn print_frame(name: &str, addr_info: Option<(Addr, Addr, usize)>, code_info: &Option<CodeInfo>) {
+    let code_info = code_info.as_ref().map(|code_info| {
+        let path = code_info.to_path();
+        let path = path.display();
+
+        match (code_info.line, code_info.column) {
+            (Some(line), Some(col)) => format!(" {path}:{line}:{col}"),
+            (Some(line), None) => format!(" {path}:{line}"),
+            (None, _) => format!(" {path}"),
+        }
+    });
+
     if let Some((input_addr, addr, offset)) = addr_info {
         println!(
-            "{input_addr:#0width$x}: {name} @ {addr:#x}+{offset:#x}",
-            width = ADDR_WIDTH
+            "{input_addr:#0width$x}: {name} @ {addr:#x}+{offset:#x}{code_info}",
+            width = ADDR_WIDTH,
+            code_info = code_info.as_deref().unwrap_or(""),
         )
     } else {
-        println!("{:width$}  {name} [inlined]", " ", width = ADDR_WIDTH)
+        println!(
+            "{:width$}  {name}{code_info} [inlined]",
+            " ",
+            width = ADDR_WIDTH,
+            code_info = code_info
+                .map(|info| format!(" @{info}"))
+                .as_deref()
+                .unwrap_or(""),
+        )
     }
 }
 
@@ -50,9 +70,9 @@ pub fn stack_msg_handler(bytes: &[u8]) -> i32 {
                 inlined,
                 ..
             }) => {
-                print_frame(&name, Some((input_addr, addr, offset)));
+                print_frame(&name, Some((input_addr, addr, offset)), &code_info);
                 for frame in inlined.iter() {
-                    print_frame(&frame.name, None);
+                    print_frame(&frame.name, None, &frame.code_info);
                 }
             }
             Symbolized::Unknown(..) => {
