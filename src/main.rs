@@ -1,4 +1,5 @@
 use std::mem::MaybeUninit;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -109,19 +110,18 @@ struct Cli {
     plat_dev: Option<String>,
 }
 
-fn parse_addr(bp_type: u32) -> Result<usize> {
-    let cli = Cli::parse();
-    let expr = cli.expr;
-    let pid_task = cli.pid_task;
-    let pci_dev = cli.pci_dev;
-    let usb_dev = cli.usb_dev;
-    let plat_dev = cli.plat_dev;
-    let vmlinux = cli.vmlinux;
+fn parse_addr(cli: &Cli, bp_type: u32) -> Result<usize> {
+    let expr = &cli.expr;
+    let pid_task = &cli.pid_task;
+    let pci_dev = &cli.pci_dev;
+    let usb_dev = &cli.usb_dev;
+    let plat_dev = &cli.plat_dev;
+    let vmlinux = &cli.vmlinux;
 
     /* Use kexpr if special option is specified.
      * FIXME: If several kexpr option is specified, kmemsnoop
      * only takes one of it by order. Do we want to avoid this? */
-    if let Some(pid) = pid_task {
+    if let Some(pid) = *pid_task {
         return task_kexpr2addr(pid, &expr);
     }
 
@@ -149,9 +149,8 @@ fn parse_addr(bp_type: u32) -> Result<usize> {
     ksym2addr(&expr, bp_type)
 }
 
-fn parse_bp() -> (u32, u64) {
-    let cli = Cli::parse();
-    let bp = cli.bp;
+fn parse_bp(cli: &Cli) -> (u32, u64) {
+    let bp = &cli.bp;
 
     let bp_len = match bp {
         BpType::R1 | BpType::W1 | BpType::RW1 | BpType::X1 => 1,
@@ -170,8 +169,21 @@ fn parse_bp() -> (u32, u64) {
 }
 
 fn main() -> Result<()> {
-    let (bp_type, bp_len) = parse_bp();
-    let addr = parse_addr(bp_type)?;
+    let cli = Cli::parse();
+
+    if sudo::check() != sudo::RunningAs::Root {
+        println!("Root permission is required for kmemsnoop");
+        /* Force to ask password for sudo */
+        Command::new("sudo")
+            .arg("-k")
+            .spawn()
+            .expect("Fail to run 'sudo -k'");
+
+        let _ = sudo::escalate_if_needed();
+    }
+
+    let (bp_type, bp_len) = parse_bp(&cli);
+    let addr = parse_addr(&cli, bp_type)?;
 
     println!("Watchpoint attached on {addr:x}");
 

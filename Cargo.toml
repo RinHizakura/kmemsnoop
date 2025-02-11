@@ -15,6 +15,7 @@ perf-event-open-sys2 = "5.0.3"
 plain = "0.2.3"
 blazesym = "0.2.0-alpha.12"
 clap = { version = "4.5.4", features = ["derive"] }
+sudo = "0.6.0"
 
 [build-dependencies]
 anyhow = "1.0.82"
