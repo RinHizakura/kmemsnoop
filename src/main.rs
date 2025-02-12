@@ -1,5 +1,4 @@
 use std::mem::MaybeUninit;
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -172,13 +171,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     if sudo::check() != sudo::RunningAs::Root {
-        println!("Root permission is required for kmemsnoop");
-        /* Force to ask password for sudo */
-        Command::new("sudo")
-            .arg("-k")
-            .spawn()
-            .expect("Fail to run 'sudo -k'");
-
+        println!("(kmemsnoop: need to escalate for root permission)");
         let _ = sudo::escalate_if_needed();
     }
 
