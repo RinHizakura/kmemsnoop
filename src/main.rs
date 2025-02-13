@@ -11,6 +11,7 @@ use crate::perf::attach_breakpoint;
 use crate::utils::hexstr2int;
 
 use ksym::KSYM_DATA;
+use lazy_static::lazy_static;
 use libbpf_rs::skel::*;
 use libbpf_rs::RingBufferBuilder;
 
@@ -167,6 +168,18 @@ fn parse_bp(cli: &Cli) -> (u32, u64) {
     (bp_type, bp_len)
 }
 
+lazy_static! {
+    static ref running: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
+}
+
+fn rb_callback(bytes: &[u8]) -> i32 {
+    if !running.load(Ordering::SeqCst) {
+        return 1;
+    }
+
+    msg_handler(bytes)
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -202,14 +215,13 @@ fn main() -> Result<()> {
 
     /* The link should be hold to represent the lifetime of
      * breakpoint. */
-    let _link = attach_breakpoint(addr, bp_type, bp_len, &mut prog)?;
+    let _links = attach_breakpoint(addr, bp_type, bp_len, &mut prog)?;
 
     let mut builder = RingBufferBuilder::new();
     let msg_ringbuf = skel.maps.msg_ringbuf;
-    builder.add(&msg_ringbuf, msg_handler)?;
+    builder.add(&msg_ringbuf, rb_callback)?;
     let msg = builder.build()?;
 
-    let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
