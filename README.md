@@ -53,7 +53,7 @@ CONFIG_PROC_KCORE=y
 These dependencies are required to build kmemsnoop.
 
 ```
-$ sudo apt install clang llvm libelf1 libelf-dev zlib1g-dev
+$ sudo apt install automake clang llvm libelf1 libelf-dev zlib1g-dev
 ```
 
 You will also need bpftool for the generating of vmlinux.h.
