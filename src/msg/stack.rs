@@ -34,13 +34,13 @@ fn print_frame(name: &str, addr_info: Option<(Addr, Addr, usize)>, code_info: &O
 
     if let Some((input_addr, addr, offset)) = addr_info {
         println!(
-            "{input_addr:#0width$x}: {name} @ {addr:#x}+{offset:#x}{code_info}",
+            "\t{input_addr:#0width$x}: {name} @ {addr:#x}+{offset:#x}{code_info}",
             width = ADDR_WIDTH,
             code_info = code_info.as_deref().unwrap_or(""),
         )
     } else {
         println!(
-            "{:width$}  {name}{code_info} [inlined]",
+            "\t{:width$}  {name}{code_info} [inlined]",
             " ",
             width = ADDR_WIDTH,
             code_info = code_info
