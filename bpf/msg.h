@@ -16,6 +16,7 @@ typedef enum {
 typedef struct {
     u64 id;
     u64 type;
+    u64 timestamp;
     u64 pid;
     char cmd[TASK_COMM_LEN];
 

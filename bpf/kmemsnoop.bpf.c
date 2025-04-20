@@ -22,7 +22,7 @@ struct {
 
 u64 MSG_ID = 0;
 
-static msg_ent_t *get_message(msg_type_t type)
+static msg_ent_t *get_message(msg_type_t type, u64 timestamp)
 {
     pid_t pid = (bpf_get_current_pid_tgid() >> 32);
     size_t total_size = sizeof(msg_ent_t);
@@ -48,6 +48,7 @@ static msg_ent_t *get_message(msg_type_t type)
     ent->id = MSG_ID;
     ent->type = type;
     ent->pid = pid;
+    ent->timestamp = timestamp;
     bpf_get_current_comm(&ent->cmd, sizeof(ent->cmd));
 
     return ent;
@@ -60,12 +61,12 @@ static void submit_message(msg_ent_t *ent)
     bpf_ringbuf_submit(ent, 0);
 }
 
-static void submit_msg_stack(struct bpf_perf_event_data *ctx)
+static void submit_msg_stack(struct bpf_perf_event_data *ctx, u64 timestamp)
 {
     msg_ent_t *ent;
     stack_msg_t *stack_msg;
 
-    ent = get_message(MSG_TYPE_STACK);
+    ent = get_message(MSG_TYPE_STACK, timestamp);
     if (!ent)
         return;
 
@@ -77,7 +78,7 @@ static void submit_msg_stack(struct bpf_perf_event_data *ctx)
     submit_message(ent);
 }
 
-static void submit_msg_data(struct bpf_perf_event_data *ctx)
+static void submit_msg_data(struct bpf_perf_event_data *ctx, u64 timestamp)
 {
     msg_ent_t *ent;
     data_msg_t *data_msg;
@@ -88,7 +89,7 @@ static void submit_msg_data(struct bpf_perf_event_data *ctx)
     if (bp_type == HW_BREAKPOINT_X)
         return;
 
-    ent = get_message(MSG_TYPE_DATA);
+    ent = get_message(MSG_TYPE_DATA, timestamp);
     if (!ent)
         return;
 
@@ -104,8 +105,11 @@ static void submit_msg_data(struct bpf_perf_event_data *ctx)
 SEC("perf_event")
 int perf_event_handler(struct bpf_perf_event_data *ctx)
 {
-    submit_msg_stack(ctx);
-    submit_msg_data(ctx);
+    // Get the event timestamp as soon as possible
+    u64 timestamp = bpf_ktime_get_ns();
+
+    submit_msg_stack(ctx, timestamp);
+    submit_msg_data(ctx, timestamp);
 
     return 0;
 }

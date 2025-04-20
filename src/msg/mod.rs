@@ -17,6 +17,7 @@ const TASK_COMM_LEN: usize = 16;
 struct MsgEnt {
     id: u64,
     typ: u64,
+    timestamp: u64,
     pid: u64,
     cmd: [u8; TASK_COMM_LEN],
 }
@@ -53,7 +54,11 @@ pub fn msg_handler(bytes: &[u8]) -> i32 {
     let ent: &MsgEnt = cast(ent);
     let id = ent.id;
     let pid = ent.pid;
-    println!("Get message id={id}, pid={pid} ({})", &format_cmd(&ent.cmd));
+
+    let timestamp = ent.timestamp;
+    let t1 = timestamp / 1000_000_000;
+    let t2 = timestamp % 1000_000_000;
+    println!("[{t1}.{t2}] id={id} pid={pid} ({}):", &format_cmd(&ent.cmd));
 
     match ent.typ {
         MSG_TYPE_STACK => stack_msg_handler(inner),
