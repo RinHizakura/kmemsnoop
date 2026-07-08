@@ -1,6 +1,5 @@
 use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::bump_memlock_rlimit::*;
@@ -11,7 +10,6 @@ use crate::perf::attach_breakpoint;
 use crate::utils::hexstr2int;
 
 use ksym::KSYM_DATA;
-use lazy_static::lazy_static;
 use libbpf_rs::skel::*;
 use libbpf_rs::RingBufferBuilder;
 
@@ -168,12 +166,10 @@ fn parse_bp(cli: &Cli) -> (u32, u64) {
     (bp_type, bp_len)
 }
 
-lazy_static! {
-    static ref running: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
-}
+static RUNNING: AtomicBool = AtomicBool::new(true);
 
 fn rb_callback(bytes: &[u8]) -> i32 {
-    if !running.load(Ordering::SeqCst) {
+    if !RUNNING.load(Ordering::SeqCst) {
         return 1;
     }
 
@@ -222,12 +218,11 @@ fn main() -> Result<()> {
     builder.add(&msg_ringbuf, rb_callback)?;
     let msg = builder.build()?;
 
-    let r = running.clone();
-    ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
+    ctrlc::set_handler(|| {
+        RUNNING.store(false, Ordering::SeqCst);
     })?;
 
-    while running.load(Ordering::SeqCst) {
+    while RUNNING.load(Ordering::SeqCst) {
         match msg.poll(Duration::from_millis(100)) {
             Ok(()) => {}
             Err(e) if e.kind() == libbpf_rs::ErrorKind::Interrupted => {}
