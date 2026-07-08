@@ -228,9 +228,10 @@ fn main() -> Result<()> {
     })?;
 
     while running.load(Ordering::SeqCst) {
-        let result = msg.poll(Duration::MAX);
-        if let Err(_r) = &result {
-            return result.map_err(anyhow::Error::msg);
+        match msg.poll(Duration::from_millis(100)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == libbpf_rs::ErrorKind::Interrupted => {}
+            Err(e) => return Err(anyhow::Error::msg(e)),
         }
     }
 
