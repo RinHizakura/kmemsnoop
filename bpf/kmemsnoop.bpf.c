@@ -38,14 +38,14 @@ static msg_ent_t *get_message(msg_type_t type, u64 timestamp)
         break;
     }
 
-    MSG_ID++;
+    u64 id = __sync_add_and_fetch(&MSG_ID, 1);
 
     msg_ent_t *ent = bpf_ringbuf_reserve(&msg_ringbuf, total_size, 0);
     if (!ent) {
-        bpf_printk("Drop message entry %d", MSG_ID);
+        bpf_printk("Drop message entry %d", id);
         return NULL;
     }
-    ent->id = MSG_ID;
+    ent->id = id;
     ent->type = type;
     ent->pid = pid;
     ent->timestamp = timestamp;
