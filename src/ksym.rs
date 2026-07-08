@@ -47,7 +47,7 @@ impl KSymResolver {
 
             let tokens = line.split_whitespace().collect::<Vec<_>>();
             if tokens.len() < 3 {
-                break;
+                continue;
             }
 
             let (addr, kind, func) = (tokens[0], tokens[1], tokens[2]);
