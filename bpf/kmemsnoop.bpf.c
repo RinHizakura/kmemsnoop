@@ -96,8 +96,15 @@ static void submit_msg_data(struct bpf_perf_event_data *ctx, u64 timestamp)
     data_msg = GET_INNER_MSG(ent, data_msg_t);
 
     data_msg->addr = ctx->addr;
-    if (data_ptr)
-        bpf_core_read(&data_msg->val, bp_len, data_ptr);
+    /* Zero first: bp_len may be < 8, and a failed read leaves the
+     * destination untouched, so the unread bytes must not be garbage. */
+    data_msg->val = 0;
+    if (data_ptr) {
+        long err = bpf_core_read(&data_msg->val, bp_len, data_ptr);
+        if (err)
+            bpf_printk("Fail to read %d bytes at %llx: %ld", bp_len, ctx->addr,
+                       err);
+    }
 
     submit_message(ent);
 }
