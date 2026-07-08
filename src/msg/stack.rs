@@ -53,7 +53,13 @@ fn print_frame(name: &str, addr_info: Option<(Addr, Addr, usize)>, code_info: &O
 
 pub fn stack_msg_handler(bytes: &[u8]) -> i32 {
     let msg: &StackMsg = cast(bytes);
-    let stack_sz = msg.kstack_sz as usize / size_of::<u64>();
+    /* bpf_get_stack() reports a negative errno on failure. */
+    let kstack_sz = msg.kstack_sz as i64;
+    if kstack_sz < 0 {
+        println!("\tfailed to get stack: errno {}", -kstack_sz);
+        return 0;
+    }
+    let stack_sz = (kstack_sz as usize / size_of::<u64>()).min(msg.kstack.len());
     let addrs = &msg.kstack[..stack_sz];
 
     let src = Source::Kernel(Kernel::default());
