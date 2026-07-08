@@ -173,7 +173,7 @@ fn main() -> Result<()> {
 
     if sudo::check() != sudo::RunningAs::Root {
         println!("(kmemsnoop: need to escalate for root permission)");
-        let _ = sudo::escalate_if_needed();
+        sudo::escalate_if_needed().map_err(|e| anyhow!("Failed to escalate to root: {e}"))?;
     }
 
     let (bp_type, bp_len) = parse_bp(&cli);
