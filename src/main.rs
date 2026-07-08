@@ -168,14 +168,6 @@ fn parse_bp(cli: &Cli) -> (u32, u64) {
 
 static RUNNING: AtomicBool = AtomicBool::new(true);
 
-fn rb_callback(bytes: &[u8]) -> i32 {
-    if !RUNNING.load(Ordering::SeqCst) {
-        return 1;
-    }
-
-    msg_handler(bytes)
-}
-
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -215,7 +207,7 @@ fn main() -> Result<()> {
 
     let mut builder = RingBufferBuilder::new();
     let msg_ringbuf = skel.maps.msg_ringbuf;
-    builder.add(&msg_ringbuf, rb_callback)?;
+    builder.add(&msg_ringbuf, msg_handler)?;
     let msg = builder.build()?;
 
     ctrlc::set_handler(|| {
