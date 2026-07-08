@@ -58,7 +58,10 @@ pub fn msg_handler(bytes: &[u8]) -> i32 {
     let timestamp = ent.timestamp;
     let t1 = timestamp / 1000_000_000;
     let t2 = timestamp % 1000_000_000;
-    println!("[{t1}.{t2}] id={id} pid={pid} ({}):", &format_cmd(&ent.cmd));
+    println!(
+        "[{t1}.{t2:09}] id={id} pid={pid} ({}):",
+        &format_cmd(&ent.cmd)
+    );
 
     match ent.typ {
         MSG_TYPE_STACK => stack_msg_handler(inner),
