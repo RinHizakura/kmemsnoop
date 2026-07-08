@@ -139,7 +139,7 @@ fn find_expr_value(obj: &Object, expr: &str) -> Option<u64> {
 
 #[cfg(feature = "kexpr")]
 pub fn task_kexpr2addr(pid: u64, expr: &str) -> Result<usize> {
-    let prog = Program::new();
+    let prog = Program::new()?;
     let task = prog.find_task(pid)?;
     if let Some(value) = find_expr_value(&task, expr) {
         return Ok(value as usize);
@@ -154,7 +154,7 @@ fn bus_to_subsys(prog: &Program, bus: &str) -> Result<Object> {
     let bus_kset_list = bus_kset
         .deref_member("list")
         .ok_or(anyhow!("Fail to find member list"))?;
-    let subsys_list = List::new(bus_kset_list, "struct subsys_private", "subsys.kobj.entry");
+    let subsys_list = List::new(bus_kset_list, "struct subsys_private", "subsys.kobj.entry")?;
 
     for subsys in subsys_list {
         let Some(bus_type) = subsys.deref_member("bus") else {
@@ -186,7 +186,7 @@ fn find_busdev(prog: &Program, bus: &str, dev_name: &str) -> Result<Object> {
         .member("k_list")
         .ok_or(anyhow!("Fail to find member k_list"))?;
 
-    let dev_list = List::new(sp_k_list, "struct device_private", "knode_bus.n_node");
+    let dev_list = List::new(sp_k_list, "struct device_private", "knode_bus.n_node")?;
 
     for dev in dev_list {
         let device = dev
@@ -211,7 +211,7 @@ fn find_busdev(prog: &Program, bus: &str, dev_name: &str) -> Result<Object> {
 macro_rules! define_dev_kexpr2addr {
     ($fname: tt, $bus: literal, $struct: literal) => {
         pub fn $fname(dev_name: &str, expr: &str) -> Result<usize> {
-            let prog = Program::new();
+            let prog = Program::new()?;
             let busdev = find_busdev(&prog, $bus, dev_name)?;
             let dev = busdev
                 .container_of($struct, "dev")
