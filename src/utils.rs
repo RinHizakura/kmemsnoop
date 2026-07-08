@@ -11,7 +11,7 @@ pub fn cast<T: plain::Plain>(args: &[u8]) -> &T {
     return plain::from_bytes::<T>(slice).expect("Fail to cast bytes");
 }
 
-pub fn hexstr2int(hex: &String) -> Result<usize> {
+pub fn hexstr2int(hex: &str) -> Result<usize> {
     Ok(usize::from_str_radix(hex.trim_start_matches("0x"), 16)?)
 }
 

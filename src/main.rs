@@ -135,7 +135,7 @@ fn parse_addr(cli: &Cli, bp_type: u32) -> Result<usize> {
         return platdev_kexpr2addr(&plat_dev, &expr);
     }
 
-    if let Ok(addr) = hexstr2int(&expr) {
+    if let Ok(addr) = hexstr2int(expr) {
         return Ok(addr);
     }
 
