@@ -1,15 +1,13 @@
 use std::mem::MaybeUninit;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::bump_memlock_rlimit::*;
-use crate::kexpr::*;
-use crate::ksym::{KSymResolver, KSYM_FUNC};
 use crate::msg::*;
 use crate::perf::attach_breakpoint;
-use crate::utils::hexstr2int;
+use crate::target::{Bus, SymKind, Target};
 
-use ksym::KSYM_DATA;
 use libbpf_rs::skel::*;
 use libbpf_rs::RingBufferBuilder;
 
@@ -20,36 +18,16 @@ use perf_event_open_sys::bindings::{
     HW_BREAKPOINT_R, HW_BREAKPOINT_RW, HW_BREAKPOINT_W, HW_BREAKPOINT_X,
 };
 
-use blazesym::inspect;
-use blazesym::inspect::Inspector;
-
 mod bump_memlock_rlimit;
-mod kexpr;
-mod ksym;
 mod msg;
 mod perf;
+mod target;
 mod utils;
 
 #[path = "../bpf/.output/kmemsnoop.skel.rs"]
 #[cfg_attr(rustfmt, rustfmt_skip)]
 mod kmemsnoop;
 use kmemsnoop::*;
-
-fn vmlinux2addr(sym: &str, vmlinux: &str) -> Result<usize> {
-    let src = inspect::Source::Elf(inspect::Elf::new(vmlinux));
-    let inspector = Inspector::new();
-    let results = inspector.lookup(&src, &[sym])?;
-
-    let results = results.into_iter().flatten().collect::<Vec<_>>();
-
-    if results.len() != 1 {
-        return Err(anyhow!(format!("Failed to get address of symbol {sym}")));
-    }
-
-    let addr = results[0].addr as usize;
-
-    Ok(addr)
-}
 
 #[derive(clap::ValueEnum, Clone)]
 enum BpType {
@@ -71,80 +49,71 @@ enum BpType {
     X8,
 }
 
-fn ksym2addr(sym: &str, bp: u32) -> Result<usize> {
-    let kresolver = KSymResolver::new();
-
-    let sym_typ = match bp {
-        HW_BREAKPOINT_X => KSYM_FUNC,
-        _ => KSYM_DATA,
-    };
-
-    kresolver
-        .find_ksym(sym, sym_typ)
-        .ok_or(anyhow!(format!("Failed to get address of symbol {sym}")))
-}
-
+/* The options in group "target" are mutually exclusive */
 #[derive(Parser)]
 struct Cli {
     #[arg(value_enum, help = "type of the watchpoint")]
     bp: BpType,
 
-    #[arg(help = "expression of watchpoint(kernel symbol or addess by default)")]
+    #[arg(help = "expression of watchpoint(kernel symbol or 0x address by default)")]
     expr: String,
 
-    #[arg(short, long, help = "vmlinux path of running kernel(need nokaslr)")]
-    vmlinux: Option<String>,
+    #[arg(
+        short,
+        long,
+        group = "target",
+        help = "vmlinux path of running kernel(need nokaslr)"
+    )]
+    vmlinux: Option<PathBuf>,
 
-    #[arg(long, help = "kexpr: use 'struct task_struct' from pid")]
+    #[arg(
+        long,
+        group = "target",
+        help = "kexpr: use 'struct task_struct' from pid"
+    )]
     pid_task: Option<u64>,
 
-    #[arg(long, help = "kexpr: 'struct pci_dev' from the device name")]
+    #[arg(
+        long,
+        group = "target",
+        help = "kexpr: 'struct pci_dev' from the device name"
+    )]
     pci_dev: Option<String>,
 
-    #[arg(long, help = "kexpr: 'struct usb_device' from the device name")]
+    #[arg(
+        long,
+        group = "target",
+        help = "kexpr: 'struct usb_device' from the device name"
+    )]
     usb_dev: Option<String>,
 
-    #[arg(long, help = "kexpr: 'struct platform_device' from the device name")]
+    #[arg(
+        long,
+        group = "target",
+        help = "kexpr: 'struct platform_device' from the device name"
+    )]
     plat_dev: Option<String>,
 }
 
-fn parse_addr(cli: &Cli, bp_type: u32) -> Result<usize> {
-    let expr = &cli.expr;
-    let pid_task = &cli.pid_task;
-    let pci_dev = &cli.pci_dev;
-    let usb_dev = &cli.usb_dev;
-    let plat_dev = &cli.plat_dev;
-    let vmlinux = &cli.vmlinux;
+impl From<&Cli> for Target {
+    fn from(cli: &Cli) -> Self {
+        if let Some(pid) = cli.pid_task {
+            return Target::Task(pid);
+        }
+        if let Some(dev) = &cli.pci_dev {
+            return Target::BusDev(Bus::Pci, dev.clone());
+        }
+        if let Some(dev) = &cli.usb_dev {
+            return Target::BusDev(Bus::Usb, dev.clone());
+        }
+        if let Some(dev) = &cli.plat_dev {
+            return Target::BusDev(Bus::Platform, dev.clone());
+        }
 
-    /* Use kexpr if special option is specified.
-     * FIXME: If several kexpr option is specified, kmemsnoop
-     * only takes one of it by order. Do we want to avoid this? */
-    if let Some(pid) = *pid_task {
-        return task_kexpr2addr(pid, &expr);
+        Target::Kernel {
+            vmlinux: cli.vmlinux.clone(),
+        }
     }
-
-    if let Some(pci_dev) = pci_dev {
-        return pcidev_kexpr2addr(&pci_dev, &expr);
-    }
-
-    if let Some(usb_dev) = usb_dev {
-        return usbdev_kexpr2addr(&usb_dev, &expr);
-    }
-
-    if let Some(plat_dev) = plat_dev {
-        return platdev_kexpr2addr(&plat_dev, &expr);
-    }
-
-    if let Ok(addr) = hexstr2int(expr) {
-        return Ok(addr);
-    }
-
-    /* Use vmlinux to know the address by symbol */
-    if let Some(vmlinux) = vmlinux {
-        return vmlinux2addr(&expr, &vmlinux);
-    }
-
-    ksym2addr(&expr, bp_type)
 }
 
 fn parse_bp(cli: &Cli) -> (u32, u64) {
@@ -177,7 +146,12 @@ fn main() -> Result<()> {
     }
 
     let (bp_type, bp_len) = parse_bp(&cli);
-    let addr = parse_addr(&cli, bp_type)?;
+    let sym_kind = if bp_type == HW_BREAKPOINT_X {
+        SymKind::Func
+    } else {
+        SymKind::Data
+    };
+    let addr = Target::from(&cli).resolve(&cli.expr, sym_kind)?;
 
     println!("Watchpoint attached on {addr:x}");
 

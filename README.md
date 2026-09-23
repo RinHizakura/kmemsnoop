@@ -95,8 +95,9 @@ Options:
 ```
 
 * `EXPR` is the expression to describe the watchpoint. If not using the "kexpr"
-options(e.g. `--pid-task`), it can be the name of kernel symbol or addess value
-in hex. If using the "kexpr", it is the expression dereferenced from the
+options(e.g. `--pid-task`), it can be the name of kernel symbol or an address
+in hex. An address must start with `0x`; anything else is treated as a symbol
+name. If using the "kexpr", it is the expression dereferenced from the
 given structure according the option.
 * `BP` is the type of watchpoint. For example, r8 means to watch a read
 operation from the base of `EXPR` with 8 bytes length.
@@ -118,6 +119,9 @@ name `USB_DEV`. Check `/sys/bus/usb/devices/` for the valid name.
 * `PLAT_DEV` allows you to watch the field which is dereferenced from a
 `struct platform_device` by `EXPR`. The `struct platform_device` comes from the
 device with name `PLAT_DEV`. Check `/sys/bus/platform/devices/` for the valid name.
+
+`--vmlinux` and the four "kexpr" options are mutually exclusive. Giving more than
+one of them is an error.
 
 ### Examples
 
