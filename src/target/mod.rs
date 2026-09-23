@@ -3,6 +3,7 @@
 //! `Bus` and `SymKind`; kallsyms, vmlinux and kexpr are adapters behind
 //! `Target::resolve()`.
 
+mod expr;
 mod ksym;
 
 #[cfg(feature = "kexpr")]
@@ -10,14 +11,18 @@ mod kexpr;
 
 #[cfg(not(feature = "kexpr"))]
 mod kexpr {
+    use super::expr::Expr;
     use super::Bus;
     use anyhow::{anyhow, Result};
 
-    pub fn task(_pid: u64, _expr: &str) -> Result<usize> {
+    /* Syntax is still checked so the user gets the same error either way. */
+    pub fn task(_pid: u64, expr: &str) -> Result<usize> {
+        Expr::parse(expr)?;
         Err(anyhow!("kexpr is not configured"))
     }
 
-    pub fn busdev(_bus: Bus, _dev_name: &str, _expr: &str) -> Result<usize> {
+    pub fn busdev(_bus: Bus, _dev_name: &str, expr: &str) -> Result<usize> {
+        Expr::parse(expr)?;
         Err(anyhow!("kexpr is not configured"))
     }
 }

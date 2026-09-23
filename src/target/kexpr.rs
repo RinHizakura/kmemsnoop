@@ -1,145 +1,44 @@
 use anyhow::{anyhow, Result};
 use drgn_knight::*;
 
+use super::expr::{Expr, Op};
 use super::Bus;
 
-#[derive(Debug)]
-enum Token {
-    Member(String),
-    Access,
-    AddrOf,
-    Deref,
-}
-
-/* FIXME: This is an ugly lexer for the C structure experssion :( */
-struct Lexer {
-    s: String,
-    pos: usize,
-    len: usize,
-}
-
-impl Lexer {
-    pub fn new(s: String) -> Self {
-        let l = s.len();
-        Lexer {
-            s: s,
-            pos: 0,
-            len: l,
-        }
-    }
-
-    pub fn next_token(&mut self) -> Option<Token> {
-        let s = self.s.as_bytes();
-
-        while self.pos < self.len {
-            let c = s[self.pos] as u8;
-            self.pos += 1;
-            match c {
-                b'.' => return Some(Token::Access),
-                b'&' => return Some(Token::AddrOf),
-                b'-' => {
-                    if self.pos >= self.len || s[self.pos] != b'>' {
-                        return None;
-                    }
-                    self.pos += 1;
-                    return Some(Token::Deref);
-                }
-                _ => {
-                    let start = self.pos - 1;
-
-                    while self.pos < self.len {
-                        let c = s[self.pos];
-                        if c == b'.' || c == b'-' {
-                            break;
-                        }
-                        self.pos += 1;
-                    }
-
-                    return Some(Token::Member(self.s[start..self.pos].to_string()));
-                }
-            }
+impl Expr {
+    /// Walk the parsed steps from `root` and read the final value, or its
+    /// address when the expression started with `&`.
+    pub fn eval(&self, root: &Object) -> Result<u64> {
+        let mut cur: Option<Object> = None;
+        let mut prev: Option<&str> = None;
+        for step in &self.steps {
+            let obj = cur.as_ref().unwrap_or(root);
+            let next = match step.op {
+                Op::Access => obj.member(&step.member),
+                Op::Deref => obj.deref_member(&step.member),
+            };
+            cur = Some(next.ok_or_else(|| match prev {
+                Some(prev) => anyhow!("member {:?} not found after {prev:?}", step.member),
+                None => anyhow!("member {:?} not found", step.member),
+            })?);
+            prev = Some(&step.member);
         }
 
-        None
-    }
-}
-
-enum TokenType {
-    Access,
-    Deref,
-    Member,
-}
-
-fn find_expr_value(obj: &Object, expr: &str) -> Option<u64> {
-    let mut lexer = Lexer::new(expr.to_string());
-    let mut addr_of = false;
-
-    /* The First token should be Token::AddrOf or Token::Member, and
-     * we need the first member here. */
-    let mut cur_obj = None;
-    while let Some(token) = lexer.next_token() {
-        match token {
-            Token::AddrOf => {
-                if addr_of {
-                    return None;
-                }
-                addr_of = true;
-            }
-            Token::Member(member) => {
-                cur_obj = obj.deref_member(&member);
-                break;
-            }
-            _ => {
-                println!("Invalid token {token:?}");
-                return None;
-            }
+        let cur = cur.expect("Expr::parse never yields an empty expression");
+        if self.addr_of {
+            cur.address_of()
+                .ok_or_else(|| anyhow!("can't take the address of {:?}", prev.unwrap_or("")))?
+                .to_num()
+        } else {
+            cur.to_num()
         }
-    }
-
-    let mut cur_obj = cur_obj?;
-    let mut prev_token = TokenType::Member;
-    while let Some(token) = lexer.next_token() {
-        match token {
-            Token::Member(member) => {
-                cur_obj = match prev_token {
-                    TokenType::Access => cur_obj.member(&member)?,
-                    TokenType::Deref => cur_obj.deref_member(&member)?,
-                    _ => return None,
-                };
-
-                prev_token = TokenType::Member;
-            }
-            Token::Access => {
-                if !matches!(prev_token, TokenType::Member) {
-                    return None;
-                }
-                prev_token = TokenType::Access;
-            }
-            Token::Deref => {
-                if !matches!(prev_token, TokenType::Member) {
-                    return None;
-                }
-                prev_token = TokenType::Deref;
-            }
-            _ => return None,
-        }
-    }
-
-    if addr_of {
-        cur_obj.address_of()?.to_num().ok()
-    } else {
-        cur_obj.to_num().ok()
     }
 }
 
 pub fn task(pid: u64, expr: &str) -> Result<usize> {
+    let expr = Expr::parse(expr)?;
     let prog = Program::new()?;
     let task = prog.find_task(pid)?;
-    if let Some(value) = find_expr_value(&task, expr) {
-        return Ok(value as usize);
-    }
-
-    Err(anyhow!("Invalid kexpr {expr}"))
+    Ok(expr.eval(&task)? as usize)
 }
 
 fn bus_to_subsys(prog: &Program, bus: &str) -> Result<Object> {
@@ -200,15 +99,12 @@ fn find_busdev(prog: &Program, bus: &str, dev_name: &str) -> Result<Object> {
 }
 
 pub fn busdev(bus: Bus, dev_name: &str, expr: &str) -> Result<usize> {
+    let expr = Expr::parse(expr)?;
     let (bus_name, dev_struct) = bus.table();
     let prog = Program::new()?;
     let busdev = find_busdev(&prog, bus_name, dev_name)?;
     let dev = busdev
         .container_of(dev_struct, "dev")
         .ok_or(anyhow!("Fail to get data for device {dev_name}"))?;
-    if let Some(value) = find_expr_value(&dev, expr) {
-        return Ok(value as usize);
-    }
-
-    Err(anyhow!("Invalid {expr} for device {dev_name}"))
+    Ok(expr.eval(&dev)? as usize)
 }
