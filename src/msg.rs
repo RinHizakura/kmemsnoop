@@ -14,6 +14,10 @@ const MSG_TYPE_STACK: u64 = 0;
 const MSG_TYPE_DATA: u64 = 1;
 const TASK_COMM_LEN: usize = 16;
 const PERF_MAX_STACK_DEPTH: usize = 127;
+/* perf callchains carry context markers (PERF_CONTEXT_KERNEL = -128, ...)
+ * that all sit at or above PERF_CONTEXT_MAX; they are not return addresses.
+ * See enum perf_callchain_context in <linux/perf_event.h>. */
+const PERF_CONTEXT_MAX: u64 = -4095i64 as u64;
 
 #[repr(C)]
 struct MsgEnt {
@@ -132,11 +136,18 @@ impl Decoder {
             return Ok(Body::StackFailed { errno: -kstack_sz });
         }
         let depth = (kstack_sz as usize / size_of::<u64>()).min(msg.kstack.len());
-        let addrs = &msg.kstack[..depth];
+        let addrs: Vec<u64> = msg.kstack[..depth]
+            .iter()
+            .copied()
+            .filter(|&a| a < PERF_CONTEXT_MAX)
+            .collect();
+        if addrs.is_empty() {
+            return Ok(Body::Stack(Vec::new()));
+        }
 
         let syms = self
             .symbolizer
-            .symbolize(&self.src, Input::AbsAddr(addrs))?;
+            .symbolize(&self.src, Input::AbsAddr(&addrs))?;
 
         let mut frames = Vec::new();
         for (input_addr, sym) in addrs.iter().copied().zip(syms) {
@@ -323,6 +334,21 @@ mod tests {
         assert_eq!(
             decode(&bytes)?.to_string(),
             "[1.500000123] id=7 pid=42 (\"0123456789abcdef\"...):\n\tfailed to get stack: errno 14"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn perf_context_markers_are_not_frames() -> Result<()> {
+        let mut bytes = header(MSG_TYPE_STACK, b"sync");
+        bytes.extend_from_slice(&8u64.to_ne_bytes());
+        let mut stack = [0u8; PERF_MAX_STACK_DEPTH * 8];
+        stack[..8].copy_from_slice(&(-128i64 as u64).to_ne_bytes());
+        bytes.extend_from_slice(&stack);
+
+        assert_eq!(
+            decode(&bytes)?.to_string(),
+            "[1.500000123] id=7 pid=42 (\"sync\"):"
         );
         Ok(())
     }
