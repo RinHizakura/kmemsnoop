@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::bump_memlock_rlimit::*;
-use crate::msg::*;
+use crate::msg::Decoder;
 use crate::perf::attach_breakpoint;
 use crate::target::{Bus, SymKind, Target};
 
@@ -179,9 +179,18 @@ fn main() -> Result<()> {
      * breakpoint. */
     let _links = attach_breakpoint(addr, bp_type, bp_len, &mut prog)?;
 
+    /* Declared before the builder: the callback borrows it for as long
+     * as the ring buffer lives. */
+    let decoder = Decoder::new();
     let mut builder = RingBufferBuilder::new();
     let msg_ringbuf = skel.maps.msg_ringbuf;
-    builder.add(&msg_ringbuf, msg_handler)?;
+    builder.add(&msg_ringbuf, |bytes| {
+        match decoder.decode(bytes) {
+            Ok(msg) => println!("{msg}"),
+            Err(e) => eprintln!("kmemsnoop: {e}"),
+        }
+        0
+    })?;
     let msg = builder.build()?;
 
     ctrlc::set_handler(|| {

@@ -5,12 +5,6 @@ use std::fs;
 
 use anyhow::{anyhow, Result};
 
-pub fn cast<T: plain::Plain>(args: &[u8]) -> &T {
-    let size = std::mem::size_of::<T>();
-    let slice = &args[0..size];
-    return plain::from_bytes::<T>(slice).expect("Fail to cast bytes");
-}
-
 pub fn hexstr2int(hex: &str) -> Result<usize> {
     Ok(usize::from_str_radix(hex.trim_start_matches("0x"), 16)?)
 }
