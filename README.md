@@ -82,8 +82,8 @@ $ kmemsnoop --help
 Usage: kmemsnoop [OPTIONS] <BP> <EXPR>
 
 Arguments:
-  <BP>    type of the watchpoint [possible values: r1, w1, rw1, x1, r2, w2, rw2, x2, r4, w4, rw4, x4, r8, w8, rw8, x8]
-  <EXPR>  expression of watchpoint(kernel symbol or addess by default)
+  <BP>    type of the watchpoint: r, w, rw or x followed by 1, 2, 4 or 8, e.g. rw4
+  <EXPR>  expression of watchpoint(kernel symbol or 0x address by default)
 
 Options:
   -v, --vmlinux <VMLINUX>    vmlinux path of running kernel(need nokaslr)
@@ -99,8 +99,9 @@ options(e.g. `--pid-task`), it can be the name of kernel symbol or an address
 in hex. An address must start with `0x`; anything else is treated as a symbol
 name. If using the "kexpr", it is the expression dereferenced from the
 given structure according the option.
-* `BP` is the type of watchpoint. For example, r8 means to watch a read
-operation from the base of `EXPR` with 8 bytes length.
+* `BP` is the type of watchpoint: the access kind `r`, `w`, `rw` or `x`
+followed by the length `1`, `2`, `4` or `8`. For example, r8 means to watch a
+read operation from the base of `EXPR` with 8 bytes length.
 
 Options:
 * `VMLINUX` is the path of `vmlinux` file for getting the address of kernel

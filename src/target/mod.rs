@@ -32,8 +32,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use blazesym::inspect::{self, Inspector};
 
-use crate::utils::hexstr2int;
-
 /// Kind of kernel symbol to look up in kallsyms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SymKind {
@@ -92,6 +90,10 @@ impl Target {
             }
         }
     }
+}
+
+fn hexstr2int(hex: &str) -> Result<usize> {
+    Ok(usize::from_str_radix(hex.trim_start_matches("0x"), 16)?)
 }
 
 fn vmlinux2addr(sym: &str, vmlinux: &Path) -> Result<usize> {
