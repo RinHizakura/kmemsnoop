@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
@@ -6,83 +5,43 @@ use anyhow::{Context, Result};
 
 use super::SymKind;
 
-#[derive(Debug)]
-struct Ksym {
-    name: String,
-    kind: SymKind,
-    addr: usize,
+/// Address of `sym` in /proc/kallsyms, among symbols of the given kind.
+pub fn find_ksym(sym: &str, kind: SymKind) -> Result<Option<usize>> {
+    let f = File::open("/proc/kallsyms").context("/proc/kallsyms is needed to resolve symbols")?;
+    find_ksym_in(BufReader::new(f), sym, kind)
 }
 
-impl Ksym {
-    fn by_name_cmp(&self, other: &Ksym) -> Ordering {
-        self.kind
-            .cmp(&other.kind)
-            .then_with(|| self.name.cmp(&other.name))
-    }
-}
-
-/* FIXME: This is a naive symbol resolver which is created from
- * /proc/kallsyms. We can optimize it to parse the interesting
- * information quickly. */
-pub struct KSymResolver {
-    syms: Vec<Ksym>,
-}
-
-impl KSymResolver {
-    pub fn new() -> Result<Self> {
-        let f =
-            File::open("/proc/kallsyms").context("/proc/kallsyms is needed for KSymResolver")?;
-        Self::from_reader(BufReader::new(f))
-    }
-
-    /// Parse kallsyms-format text: `addr kind name [module]` per line.
-    pub fn from_reader(reader: impl BufRead) -> Result<Self> {
-        let mut syms = Vec::new();
-        for line in reader.lines() {
-            let line = line?;
-            let mut tokens = line.split_whitespace();
-            let (Some(addr), Some(kind), Some(name)) =
-                (tokens.next(), tokens.next(), tokens.next())
-            else {
-                continue;
-            };
-
-            let Ok(addr) = usize::from_str_radix(addr, 16) else {
-                continue;
-            };
-            if addr == 0 {
-                continue;
-            }
-
-            let kind = if kind == "t" || kind == "T" {
-                SymKind::Func
-            } else {
-                SymKind::Data
-            };
-            syms.push(Ksym {
-                name: name.to_owned(),
-                kind,
-                addr,
-            });
+/// One pass over kallsyms-format text (`addr kind name [module]` per line),
+/// stopping at the first match: reading the file dominates, so no table is
+/// built for a single lookup. `t`/`T` are functions, everything else data;
+/// address 0 (kptr_restrict) and unparsable lines are skipped.
+pub fn find_ksym_in(reader: impl BufRead, sym: &str, kind: SymKind) -> Result<Option<usize>> {
+    for line in reader.lines() {
+        let line = line?;
+        let mut tokens = line.split_whitespace();
+        let (Some(addr), Some(typ), Some(name)) = (tokens.next(), tokens.next(), tokens.next())
+        else {
+            continue;
+        };
+        if name != sym {
+            continue;
         }
 
-        syms.sort_by(|a, b| a.by_name_cmp(b));
-
-        Ok(Self { syms })
-    }
-
-    pub fn find_ksym(&self, sym: &str, kind: SymKind) -> Option<usize> {
-        let probe = Ksym {
-            name: sym.to_owned(),
-            kind,
-            addr: 0,
+        let line_kind = if typ == "t" || typ == "T" {
+            SymKind::Func
+        } else {
+            SymKind::Data
         };
+        if line_kind != kind {
+            continue;
+        }
 
-        self.syms
-            .binary_search_by(|a| a.by_name_cmp(&probe))
-            .ok()
-            .map(|idx| self.syms[idx].addr)
+        match usize::from_str_radix(addr, 16) {
+            Ok(0) | Err(_) => continue,
+            Ok(addr) => return Ok(Some(addr)),
+        }
     }
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -99,51 +58,33 @@ this line is not kallsyms
 ffffffff83000000 B nr_threads	[mod]
 ";
 
-    fn resolver() -> Result<KSymResolver> {
-        KSymResolver::from_reader(KALLSYMS.as_bytes())
+    fn find(sym: &str, kind: SymKind) -> Result<Option<usize>> {
+        find_ksym_in(KALLSYMS.as_bytes(), sym, kind)
     }
 
     #[test]
     fn t_and_big_t_are_functions_everything_else_is_data() -> Result<()> {
-        let r = resolver()?;
-        assert_eq!(
-            r.find_ksym("_stext", SymKind::Func),
-            Some(0xffffffff81000000)
-        );
-        assert_eq!(
-            r.find_ksym("local_func", SymKind::Func),
-            Some(0xffffffff81000100)
-        );
-        assert_eq!(
-            r.find_ksym("nr_threads", SymKind::Data),
-            Some(0xffffffff83000000)
-        );
-        assert_eq!(r.find_ksym("nr_threads", SymKind::Func), None);
-        assert_eq!(r.find_ksym("_stext", SymKind::Data), None);
+        assert_eq!(find("_stext", SymKind::Func)?, Some(0xffffffff81000000));
+        assert_eq!(find("local_func", SymKind::Func)?, Some(0xffffffff81000100));
+        assert_eq!(find("nr_threads", SymKind::Data)?, Some(0xffffffff83000000));
+        assert_eq!(find("nr_threads", SymKind::Func)?, None);
+        assert_eq!(find("_stext", SymKind::Data)?, None);
         Ok(())
     }
 
     #[test]
     fn same_name_is_told_apart_by_kind() -> Result<()> {
-        let r = resolver()?;
-        assert_eq!(
-            r.find_ksym("same_name", SymKind::Data),
-            Some(0xffffffff82000000)
-        );
-        assert_eq!(
-            r.find_ksym("same_name", SymKind::Func),
-            Some(0xffffffff81000200)
-        );
+        assert_eq!(find("same_name", SymKind::Data)?, Some(0xffffffff82000000));
+        assert_eq!(find("same_name", SymKind::Func)?, Some(0xffffffff81000200));
         Ok(())
     }
 
     #[test]
     fn address_zero_and_bad_lines_are_skipped() -> Result<()> {
-        let r = resolver()?;
-        assert_eq!(r.find_ksym("fixed_percpu_data", SymKind::Data), None);
-        assert_eq!(r.find_ksym("missing", SymKind::Data), None);
+        assert_eq!(find("fixed_percpu_data", SymKind::Data)?, None);
+        assert_eq!(find("missing", SymKind::Data)?, None);
         /* Parsing continued past the bad line. */
-        assert!(r.find_ksym("nr_threads", SymKind::Data).is_some());
+        assert!(find("nr_threads", SymKind::Data)?.is_some());
         Ok(())
     }
 }

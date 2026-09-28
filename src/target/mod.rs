@@ -112,8 +112,7 @@ impl Target {
                 vmlinux: None,
                 name,
                 kind,
-            } => ksym::KSymResolver::new()?
-                .find_ksym(name, *kind)
+            } => ksym::find_ksym(name, *kind)?
                 .ok_or_else(|| anyhow!("Failed to get address of symbol {name}")),
             #[cfg(feature = "kexpr")]
             Target::Task { pid, expr } => kexpr::task(*pid, expr),
