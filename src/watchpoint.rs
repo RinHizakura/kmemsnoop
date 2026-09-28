@@ -175,7 +175,7 @@ fn attach_breakpoint(symbol_addr: usize, bp: Bp, prog: &mut ProgramMut) -> Resul
 
     /* We need to consider different kernel version here. See:
      * https://lore.kernel.org/bpf/20220908214104.3851807-1-namhyung@kernel.org/     */
-    let version = uname_version()?;
+    let version = kernel_version()?;
     if version <= (6, 0) {
         /* Don't set precise_ip to allow bpf_get_stack(). This
          * is a workaround and should be changed if better
@@ -236,15 +236,11 @@ fn parse_cpu_list(list: &str) -> Result<Vec<c_int>> {
     Ok(cpus)
 }
 
-fn uname_version() -> Result<(u32, u32)> {
-    let mut n = unsafe { std::mem::zeroed() };
-    let r = unsafe { libc::uname(&mut n) };
-    if r != 0 {
-        return Err(anyhow!("Failed to get uname information"));
-    }
-
-    let release = unsafe { std::ffi::CStr::from_ptr(n.release.as_ptr()) }.to_string_lossy();
-    parse_release(&release)
+/// (major, minor) of the running kernel, from the same string uname(2)
+/// reports as release.
+fn kernel_version() -> Result<(u32, u32)> {
+    let release = std::fs::read_to_string("/proc/sys/kernel/osrelease")?;
+    parse_release(release.trim())
 }
 
 /// "6.18.20.3-microsoft-standard" → (6, 18)
