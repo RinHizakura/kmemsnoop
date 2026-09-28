@@ -1,51 +1,22 @@
 //! Msg decoding: bytes from the BPF ring buffer in, a `Msg` out.
-//! The `#[repr(C)]` structs below are the only place that mirrors
-//! `bpf/msg.h`; the size asserts catch a drift at compile time.
+//! The wire layout comes from the skeleton's BTF-generated types, so
+//! `bpf/msg.h` is its only definition.
 
 use std::fmt;
 use std::mem::size_of;
 use std::path::PathBuf;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use blazesym::symbolize::{self, Input, Kernel, Source, Symbolized, Symbolizer};
-use plain::Plain;
 
-const MSG_TYPE_STACK: u64 = 0;
-const MSG_TYPE_DATA: u64 = 1;
-const TASK_COMM_LEN: usize = 16;
-const PERF_MAX_STACK_DEPTH: usize = 127;
+use crate::kmemsnoop::types::{data_msg, msg_ent, msg_type, stack_msg};
+
+const MSG_TYPE_STACK: u64 = msg_type::MSG_TYPE_STACK as u64;
+const MSG_TYPE_DATA: u64 = msg_type::MSG_TYPE_DATA as u64;
 /* perf callchains carry context markers (PERF_CONTEXT_KERNEL = -128, ...)
  * that all sit at or above PERF_CONTEXT_MAX; they are not return addresses.
  * See enum perf_callchain_context in <linux/perf_event.h>. */
 const PERF_CONTEXT_MAX: u64 = -4095i64 as u64;
-
-#[repr(C)]
-struct MsgEnt {
-    id: u64,
-    typ: u64,
-    timestamp: u64,
-    pid: u64,
-    cmd: [u8; TASK_COMM_LEN],
-}
-unsafe impl Plain for MsgEnt {}
-
-#[repr(C)]
-struct StackMsg {
-    kstack_sz: u64,
-    kstack: [u64; PERF_MAX_STACK_DEPTH],
-}
-unsafe impl Plain for StackMsg {}
-
-#[repr(C)]
-struct DataMsg {
-    addr: u64,
-    val: u64,
-}
-unsafe impl Plain for DataMsg {}
-
-const _: () = assert!(size_of::<MsgEnt>() == 48);
-const _: () = assert!(size_of::<StackMsg>() == 1024);
-const _: () = assert!(size_of::<DataMsg>() == 16);
 
 pub struct Msg {
     pub id: u64,
@@ -105,12 +76,12 @@ impl Decoder {
     }
 
     pub fn decode(&self, bytes: &[u8]) -> Result<Msg> {
-        let (ent, inner) = split::<MsgEnt>(bytes)?;
+        let (ent, inner) = split::<msg_ent>(bytes)?;
 
-        let body = match ent.typ {
+        let body = match ent.r#type {
             MSG_TYPE_STACK => self.stack(inner)?,
             MSG_TYPE_DATA => {
-                let (msg, _) = split::<DataMsg>(inner)?;
+                let (msg, _) = split::<data_msg>(inner)?;
                 Body::Data {
                     addr: msg.addr,
                     val: msg.val,
@@ -129,7 +100,7 @@ impl Decoder {
     }
 
     fn stack(&self, inner: &[u8]) -> Result<Body> {
-        let (msg, _) = split::<StackMsg>(inner)?;
+        let (msg, _) = split::<stack_msg>(inner)?;
 
         let kstack_sz = msg.kstack_sz as i64;
         if kstack_sz < 0 {
@@ -182,21 +153,24 @@ impl Decoder {
     }
 }
 
-/// Reinterpret the head of `bytes` as `T` and return the remainder.
-fn split<T: Plain>(bytes: &[u8]) -> Result<(&T, &[u8])> {
+/// Copy the head of `bytes` out as a `T` and return the remainder.
+fn split<T: Copy>(bytes: &[u8]) -> Result<(T, &[u8])> {
     let n = size_of::<T>();
     if bytes.len() < n {
         bail!("message too short: {} < {n} bytes", bytes.len());
     }
-    let t = plain::from_bytes(&bytes[..n]).map_err(|e| anyhow!("bad message layout: {e:?}"))?;
+    /* SAFETY: T is a #[repr(C)] plain-data struct generated from BTF, every
+     * bit pattern is valid, and the length was just checked. Unaligned so
+     * decode() works on any slice, not only ring buffer records. */
+    let t = unsafe { std::ptr::read_unaligned(bytes.as_ptr() as *const T) };
     Ok((t, &bytes[n..]))
 }
 
-fn format_cmd(buf: &[u8; TASK_COMM_LEN]) -> String {
+fn format_cmd(buf: &[i8]) -> String {
     let end = buf.iter().position(|&c| c == 0);
     let s: String = buf[..end.unwrap_or(buf.len())]
         .iter()
-        .map(|&c| c as char)
+        .map(|&c| c as u8 as char)
         .collect();
     /* No terminating zero in the buffer: the string is incomplete. */
     let extra = if end.is_none() { "..." } else { "" };
@@ -291,25 +265,21 @@ impl fmt::Display for CodeInfo {
 mod tests {
     use super::*;
 
-    /* Ring buffer records are 8-byte aligned; mimic that for from_bytes. */
-    #[repr(C, align(8))]
-    struct Aligned<const N: usize>([u8; N]);
-
     fn header(typ: u64, cmd: &[u8]) -> Vec<u8> {
         let mut v = Vec::new();
         for x in [7u64, typ, 1_500_000_123, 42] {
             v.extend_from_slice(&x.to_ne_bytes());
         }
-        let mut c = [0u8; TASK_COMM_LEN];
-        c[..cmd.len()].copy_from_slice(cmd);
-        v.extend_from_slice(&c);
+        let mut c = msg_ent::default().cmd;
+        for (dst, &b) in c.iter_mut().zip(cmd) {
+            *dst = b as i8;
+        }
+        v.extend(c.iter().map(|&b| b as u8));
         v
     }
 
     fn decode(bytes: &[u8]) -> Result<Msg> {
-        let mut buf = Aligned([0u8; 2048]);
-        buf.0[..bytes.len()].copy_from_slice(bytes);
-        Decoder::new().decode(&buf.0[..bytes.len()])
+        Decoder::new().decode(bytes)
     }
 
     #[test]
@@ -329,7 +299,12 @@ mod tests {
     fn failed_stack_reports_errno() -> Result<()> {
         let mut bytes = header(MSG_TYPE_STACK, b"0123456789abcdef");
         bytes.extend_from_slice(&(-14i64 as u64).to_ne_bytes());
-        bytes.extend_from_slice(&[0u8; PERF_MAX_STACK_DEPTH * 8]);
+        bytes.extend(
+            stack_msg::default()
+                .kstack
+                .iter()
+                .flat_map(|a| a.to_ne_bytes()),
+        );
 
         assert_eq!(
             decode(&bytes)?.to_string(),
@@ -342,9 +317,9 @@ mod tests {
     fn perf_context_markers_are_not_frames() -> Result<()> {
         let mut bytes = header(MSG_TYPE_STACK, b"sync");
         bytes.extend_from_slice(&8u64.to_ne_bytes());
-        let mut stack = [0u8; PERF_MAX_STACK_DEPTH * 8];
-        stack[..8].copy_from_slice(&(-128i64 as u64).to_ne_bytes());
-        bytes.extend_from_slice(&stack);
+        let mut stack = stack_msg::default().kstack;
+        stack[0] = -128i64 as u64;
+        bytes.extend(stack.iter().flat_map(|a| a.to_ne_bytes()));
 
         assert_eq!(
             decode(&bytes)?.to_string(),

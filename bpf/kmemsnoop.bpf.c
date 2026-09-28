@@ -22,6 +22,13 @@ struct {
 
 u64 MSG_ID = 0;
 
+/* Never touched: these only put the message layouts into BTF so that the
+ * skeleton generates the matching Rust types for src/msg.rs. */
+msg_type_t msg_type_layout;
+msg_ent_t msg_ent_layout;
+stack_msg_t stack_msg_layout;
+data_msg_t data_msg_layout;
+
 static msg_ent_t *get_message(msg_type_t type, u64 timestamp)
 {
     pid_t pid = (bpf_get_current_pid_tgid() >> 32);

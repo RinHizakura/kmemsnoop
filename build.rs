@@ -19,7 +19,9 @@ fn main() -> Result<()> {
         .clang_args(["-I.", "-Wextra", "-Wall", "-Werror"])
         .build_and_generate(&skel)?;
 
-    println!("cargo:rerun-if-changed={}", SKEL_SRC);
+    for src in [SKEL_SRC, "bpf/msg.h", "bpf/utils.h", "vmlinux.h"] {
+        println!("cargo:rerun-if-changed={src}");
+    }
 
     Ok(())
 }

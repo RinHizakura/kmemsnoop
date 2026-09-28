@@ -7,13 +7,13 @@
 
 #define GET_INNER_MSG(ent, typ) ((typ *) (ent->inner))
 
-typedef enum {
+typedef enum msg_type {
     MSG_TYPE_STACK = 0,
     MSG_TYPE_DATA,
 } msg_type_t;
 
 #define TASK_COMM_LEN 16
-typedef struct {
+typedef struct msg_ent {
     u64 id;
     u64 type;
     u64 timestamp;
@@ -25,12 +25,12 @@ typedef struct {
 
 typedef u64 stack_trace_t[PERF_MAX_STACK_DEPTH];
 
-typedef struct {
+typedef struct stack_msg {
     u64 kstack_sz;
     stack_trace_t kstack;
 } stack_msg_t;
 
-typedef struct {
+typedef struct data_msg {
     u64 addr;
     u64 val;
 } data_msg_t;
