@@ -335,4 +335,64 @@ mod tests {
         /* data header without its payload */
         assert!(decode(&header(MSG_TYPE_DATA, b"x")).is_err());
     }
+
+    fn code_info(line: Option<u32>, column: Option<u16>) -> CodeInfo {
+        CodeInfo {
+            path: "fs/sync.c".into(),
+            line,
+            column,
+        }
+    }
+
+    #[test]
+    fn frame_renders_sym_inlined_and_unknown() {
+        let sym = Frame::Sym {
+            input_addr: 0xffffffff816bfc8e,
+            name: "__do_sys_sync".into(),
+            addr: 0xffffffff816bfc80,
+            offset: 0xe,
+            code_info: None,
+        };
+        assert_eq!(
+            sym.to_string(),
+            "\t0xffffffff816bfc8e: __do_sys_sync @ 0xffffffff816bfc80+0xe"
+        );
+
+        let sym = Frame::Sym {
+            input_addr: 0x1234,
+            name: "f".into(),
+            addr: 0x1230,
+            offset: 4,
+            code_info: Some(code_info(Some(120), Some(3))),
+        };
+        assert_eq!(
+            sym.to_string(),
+            "\t0x00000000001234: f @ 0x1230+0x4 fs/sync.c:120:3"
+        );
+
+        let inlined = Frame::Inlined {
+            name: "g".into(),
+            code_info: None,
+        };
+        assert_eq!(inlined.to_string(), "\t                  g [inlined]");
+
+        let inlined = Frame::Inlined {
+            name: "g".into(),
+            code_info: Some(code_info(Some(7), None)),
+        };
+        assert_eq!(
+            inlined.to_string(),
+            "\t                  g @ fs/sync.c:7 [inlined]"
+        );
+
+        let unknown = Frame::Unknown { input_addr: 0x1234 };
+        assert_eq!(unknown.to_string(), "\t0x00000000001234: <no-symbol>");
+    }
+
+    #[test]
+    fn code_info_drops_missing_line_and_column() {
+        assert_eq!(code_info(Some(1), Some(2)).to_string(), "fs/sync.c:1:2");
+        assert_eq!(code_info(Some(1), None).to_string(), "fs/sync.c:1");
+        assert_eq!(code_info(None, Some(2)).to_string(), "fs/sync.c");
+    }
 }

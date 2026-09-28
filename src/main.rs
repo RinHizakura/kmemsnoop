@@ -111,3 +111,61 @@ fn main() -> Result<()> {
     println!("Terminate kmemsnoop");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::target::SymKind;
+
+    fn target(args: &[&str]) -> Result<Target> {
+        let cli = Cli::try_parse_from([&["kmemsnoop"], args].concat())?;
+        Target::try_from(&cli)
+    }
+
+    #[test]
+    fn cli_maps_to_each_target() -> Result<()> {
+        assert_eq!(target(&["x8", "0x1234"])?, Target::Kaddr(0x1234));
+        assert_eq!(
+            target(&["rw4", "nr_threads"])?,
+            Target::Ksym {
+                vmlinux: None,
+                name: "nr_threads".into(),
+                kind: SymKind::Data,
+            }
+        );
+        assert_eq!(
+            target(&["-v", "vmlinux", "x8", "ksys_sync"])?,
+            Target::Ksym {
+                vmlinux: Some("vmlinux".into()),
+                name: "ksys_sync".into(),
+                kind: SymKind::Func,
+            }
+        );
+        assert_eq!(
+            target(&["--pid-task", "1", "rw8", "parent"])?,
+            Target::task(1, "parent")?
+        );
+        for (flag, bus) in [
+            ("--pci-dev", Bus::Pci),
+            ("--usb-dev", Bus::Usb),
+            ("--plat-dev", Bus::Platform),
+        ] {
+            assert_eq!(
+                target(&[flag, "dev0", "rw4", "&id"])?,
+                Target::busdev(bus, "dev0", "&id")?
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn targets_are_mutually_exclusive() {
+        assert!(target(&["--pid-task", "1", "--pci-dev", "dev0", "rw4", "&id"]).is_err());
+        assert!(target(&["-v", "vmlinux", "--pid-task", "1", "rw4", "&id"]).is_err());
+    }
+
+    #[test]
+    fn bad_kexpr_fails_while_building_the_target() {
+        assert!(target(&["--pid-task", "1", "rw4", "se..nr"]).is_err());
+    }
+}

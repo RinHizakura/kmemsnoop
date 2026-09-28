@@ -32,8 +32,11 @@ impl KSymResolver {
     pub fn new() -> Result<Self> {
         let f =
             File::open("/proc/kallsyms").context("/proc/kallsyms is needed for KSymResolver")?;
-        let reader = BufReader::new(f);
+        Self::from_reader(BufReader::new(f))
+    }
 
+    /// Parse kallsyms-format text: `addr kind name [module]` per line.
+    pub fn from_reader(reader: impl BufRead) -> Result<Self> {
         let mut syms = Vec::new();
         for line in reader.lines() {
             let line = line?;
@@ -79,5 +82,68 @@ impl KSymResolver {
             .binary_search_by(|a| a.by_name_cmp(&probe))
             .ok()
             .map(|idx| self.syms[idx].addr)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KALLSYMS: &str = "\
+0000000000000000 A fixed_percpu_data
+ffffffff81000000 T _stext
+ffffffff81000100 t local_func
+ffffffff82000000 D same_name
+ffffffff81000200 T same_name
+this line is not kallsyms
+ffffffff83000000 B nr_threads	[mod]
+";
+
+    fn resolver() -> Result<KSymResolver> {
+        KSymResolver::from_reader(KALLSYMS.as_bytes())
+    }
+
+    #[test]
+    fn t_and_big_t_are_functions_everything_else_is_data() -> Result<()> {
+        let r = resolver()?;
+        assert_eq!(
+            r.find_ksym("_stext", SymKind::Func),
+            Some(0xffffffff81000000)
+        );
+        assert_eq!(
+            r.find_ksym("local_func", SymKind::Func),
+            Some(0xffffffff81000100)
+        );
+        assert_eq!(
+            r.find_ksym("nr_threads", SymKind::Data),
+            Some(0xffffffff83000000)
+        );
+        assert_eq!(r.find_ksym("nr_threads", SymKind::Func), None);
+        assert_eq!(r.find_ksym("_stext", SymKind::Data), None);
+        Ok(())
+    }
+
+    #[test]
+    fn same_name_is_told_apart_by_kind() -> Result<()> {
+        let r = resolver()?;
+        assert_eq!(
+            r.find_ksym("same_name", SymKind::Data),
+            Some(0xffffffff82000000)
+        );
+        assert_eq!(
+            r.find_ksym("same_name", SymKind::Func),
+            Some(0xffffffff81000200)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn address_zero_and_bad_lines_are_skipped() -> Result<()> {
+        let r = resolver()?;
+        assert_eq!(r.find_ksym("fixed_percpu_data", SymKind::Data), None);
+        assert_eq!(r.find_ksym("missing", SymKind::Data), None);
+        /* Parsing continued past the bad line. */
+        assert!(r.find_ksym("nr_threads", SymKind::Data).is_some());
+        Ok(())
     }
 }
