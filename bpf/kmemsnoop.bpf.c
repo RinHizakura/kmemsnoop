@@ -17,114 +17,48 @@ const volatile u64 bp_len;
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 4096);
+    /* About 240 hits in flight between two polls. */
+    __uint(max_entries, 256 * 1024);
 } msg_ringbuf SEC(".maps");
 
 u64 MSG_ID = 0;
 
-/* Never touched: these only put the message layouts into BTF so that the
- * skeleton generates the matching Rust types for src/msg.rs. */
-msg_type_t msg_type_layout;
-msg_ent_t msg_ent_layout;
-stack_msg_t stack_msg_layout;
-data_msg_t data_msg_layout;
-
-static msg_ent_t *get_message(msg_type_t type, u64 timestamp)
-{
-    pid_t pid = (bpf_get_current_pid_tgid() >> 32);
-    size_t total_size = sizeof(msg_ent_t);
-
-    switch (type) {
-    case MSG_TYPE_STACK:
-        total_size += sizeof(stack_msg_t);
-        break;
-    case MSG_TYPE_DATA:
-        total_size += sizeof(data_msg_t);
-        break;
-    default:
-        break;
-    }
-
-    u64 id = __sync_add_and_fetch(&MSG_ID, 1);
-
-    msg_ent_t *ent = bpf_ringbuf_reserve(&msg_ringbuf, total_size, 0);
-    if (!ent) {
-        bpf_printk("Drop message entry %d", id);
-        return NULL;
-    }
-    ent->id = id;
-    ent->type = type;
-    ent->pid = pid;
-    ent->timestamp = timestamp;
-    bpf_get_current_comm(&ent->cmd, sizeof(ent->cmd));
-
-    return ent;
-}
-
-
-static void submit_message(msg_ent_t *ent)
-{
-    bpf_printk("Submit message id=%d\n", ent->id);
-    bpf_ringbuf_submit(ent, 0);
-}
-
-static void submit_msg_stack(struct bpf_perf_event_data *ctx, u64 timestamp)
-{
-    msg_ent_t *ent;
-    stack_msg_t *stack_msg;
-
-    ent = get_message(MSG_TYPE_STACK, timestamp);
-    if (!ent)
-        return;
-
-    stack_msg = GET_INNER_MSG(ent, stack_msg_t);
-
-    stack_msg->kstack_sz =
-        bpf_get_stack(ctx, stack_msg->kstack, sizeof(stack_msg->kstack), 0);
-
-    submit_message(ent);
-}
-
-static void submit_msg_data(struct bpf_perf_event_data *ctx, u64 timestamp)
-{
-    msg_ent_t *ent;
-    data_msg_t *data_msg;
-    void *data_ptr = (void *) ctx->addr;
-
-    /* Don't share this type of message if this is an
-     * executable point */
-    if (bp_type == HW_BREAKPOINT_X)
-        return;
-
-    ent = get_message(MSG_TYPE_DATA, timestamp);
-    if (!ent)
-        return;
-
-    data_msg = GET_INNER_MSG(ent, data_msg_t);
-
-    data_msg->addr = ctx->addr;
-    /* Zero first: bp_len may be < 8, and a failed read leaves the
-     * destination untouched, so the unread bytes must not be garbage. */
-    data_msg->val = 0;
-    if (data_ptr) {
-        long err = bpf_core_read(&data_msg->val, bp_len, data_ptr);
-        if (err)
-            bpf_printk("Fail to read %d bytes at %llx: %ld", bp_len, ctx->addr,
-                       err);
-    }
-
-    submit_message(ent);
-}
+/* Never touched: it only puts the message layout into BTF so that the
+ * skeleton generates the matching Rust type for src/msg.rs. */
+msg_t msg_layout;
 
 SEC("perf_event")
 int perf_event_handler(struct bpf_perf_event_data *ctx)
 {
     // Get the event timestamp as soon as possible
     u64 timestamp = bpf_ktime_get_ns();
+    u64 id = __sync_add_and_fetch(&MSG_ID, 1);
 
-    submit_msg_stack(ctx, timestamp);
-    submit_msg_data(ctx, timestamp);
+    msg_t *msg = bpf_ringbuf_reserve(&msg_ringbuf, sizeof(*msg), 0);
+    if (!msg)
+        return 0;
 
+    msg->id = id;
+    msg->timestamp = timestamp;
+    msg->pid = bpf_get_current_pid_tgid() >> 32;
+    bpf_get_current_comm(&msg->cmd, sizeof(msg->cmd));
+
+    msg->kstack_sz = bpf_get_stack(ctx, msg->kstack, sizeof(msg->kstack), 0);
+
+    /* An execute watchpoint has no accessed data. */
+    msg->has_data = bp_type != HW_BREAKPOINT_X;
+    msg->addr = ctx->addr;
+    /* Zero first: bp_len may be < 8, and a failed read leaves the
+     * destination untouched, so the unread bytes must not be garbage. */
+    msg->val = 0;
+    if (msg->has_data && ctx->addr) {
+        long err = bpf_core_read(&msg->val, bp_len, (void *) ctx->addr);
+        if (err)
+            bpf_printk("Fail to read %d bytes at %llx: %ld", bp_len, ctx->addr,
+                       err);
+    }
+
+    bpf_ringbuf_submit(msg, 0);
     return 0;
 }
 

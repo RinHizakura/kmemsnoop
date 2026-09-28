@@ -42,6 +42,7 @@ functions; all others look up data.
 _Avoid_: symbol type
 
 **Msg**:
-One record sent from the BPF side to userspace when a watchpoint hits, either
-a stack (kernel call chain) or data (accessed address and value).
+The one record sent from the BPF side to userspace for each watchpoint hit:
+the kernel call chain, plus the accessed address and value for data
+watchpoints. Its id counts hits, so a gap means dropped hits.
 _Avoid_: event, sample

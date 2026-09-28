@@ -5,34 +5,28 @@
 #define PERF_MAX_STACK_DEPTH 127
 #endif
 
-#define GET_INNER_MSG(ent, typ) ((typ *) (ent->inner))
-
-typedef enum msg_type {
-    MSG_TYPE_STACK = 0,
-    MSG_TYPE_DATA,
-} msg_type_t;
-
 #define TASK_COMM_LEN 16
-typedef struct msg_ent {
+
+/* One record per watchpoint hit. The layout is the wire format that
+ * src/msg.rs decodes, through the skeleton's BTF-generated type. The tag
+ * must not collide with a kernel type from vmlinux.h (`struct msg` does),
+ * or member accesses turn into CO-RE relocations against kernel BTF. */
+typedef struct kmemsnoop_msg {
+    /* Counted before the ring buffer reservation, so a gap in ids is
+     * the number of hits that were dropped. */
     u64 id;
-    u64 type;
     u64 timestamp;
     u64 pid;
     char cmd[TASK_COMM_LEN];
 
-    u8 inner[0];
-} msg_ent_t;
-
-typedef u64 stack_trace_t[PERF_MAX_STACK_DEPTH];
-
-typedef struct stack_msg {
-    u64 kstack_sz;
-    stack_trace_t kstack;
-} stack_msg_t;
-
-typedef struct data_msg {
+    /* addr and val are only filled for data watchpoints. */
+    u64 has_data;
     u64 addr;
     u64 val;
-} data_msg_t;
+
+    /* Byte count from bpf_get_stack(), or a negative errno. */
+    s64 kstack_sz;
+    u64 kstack[PERF_MAX_STACK_DEPTH];
+} msg_t;
 
 #endif

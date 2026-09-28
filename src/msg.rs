@@ -1,7 +1,8 @@
 //! Msg decoding: bytes from the BPF ring buffer in, a `Msg` out.
-//! The wire layout comes from the skeleton's BTF-generated types, so
+//! The wire layout comes from the skeleton's BTF-generated type, so
 //! `bpf/msg.h` is its only definition.
 
+use std::cell::Cell;
 use std::fmt;
 use std::mem::size_of;
 use std::path::PathBuf;
@@ -9,32 +10,31 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use blazesym::symbolize::{self, Elf, Input, Kernel, Source, Symbolized, Symbolizer};
 
-use crate::kmemsnoop::types::{data_msg, msg_ent, msg_type, stack_msg};
+use crate::kmemsnoop::types::kmemsnoop_msg as wire;
 
-const MSG_TYPE_STACK: u64 = msg_type::MSG_TYPE_STACK as u64;
-const MSG_TYPE_DATA: u64 = msg_type::MSG_TYPE_DATA as u64;
 /* perf callchains carry context markers (PERF_CONTEXT_KERNEL = -128, ...)
  * that all sit at or above PERF_CONTEXT_MAX; they are not return addresses.
  * See enum perf_callchain_context in <linux/perf_event.h>. */
 const PERF_CONTEXT_MAX: u64 = -4095i64 as u64;
 
+/// One watchpoint hit.
 pub struct Msg {
     pub id: u64,
+    /// Hits lost in the ring buffer since the previous Msg.
+    pub dropped: u64,
     pub pid: u64,
     pub timestamp_ns: u64,
     pub cmd: String,
-    pub body: Body,
+    /// Accessed address and value; absent for execute watchpoints.
+    pub data: Option<(u64, u64)>,
+    pub stack: Stack,
 }
 
-pub enum Body {
-    Stack(Vec<Frame>),
+pub enum Stack {
+    Frames(Vec<Frame>),
     /// bpf_get_stack() reported a negative errno.
-    StackFailed {
+    Failed {
         errno: i64,
-    },
-    Data {
-        addr: u64,
-        val: u64,
     },
 }
 
@@ -65,6 +65,10 @@ pub struct CodeInfo {
 pub struct Decoder {
     symbolizer: Symbolizer,
     src: Source<'static>,
+    /// Id of the last decoded Msg, to count the gap before the next one.
+    /// ponytail: ids are per ring buffer, so use one Decoder per Watchpoint
+    /// once poll() reports which one fired.
+    last_id: Cell<u64>,
 }
 
 impl Decoder {
@@ -78,48 +82,39 @@ impl Decoder {
         Decoder {
             symbolizer: Symbolizer::new(),
             src,
+            last_id: Cell::new(0),
         }
     }
 
     pub fn decode(&self, bytes: &[u8]) -> Result<Msg> {
-        let (ent, inner) = split::<msg_ent>(bytes)?;
+        let (w, _) = split::<wire>(bytes)?;
 
-        let body = match ent.r#type {
-            MSG_TYPE_STACK => self.stack(inner)?,
-            MSG_TYPE_DATA => {
-                let (msg, _) = split::<data_msg>(inner)?;
-                Body::Data {
-                    addr: msg.addr,
-                    val: msg.val,
-                }
-            }
-            typ => bail!("unknown message type {typ}"),
-        };
+        let dropped = w.id.saturating_sub(self.last_id.get() + 1);
+        self.last_id.set(w.id);
 
         Ok(Msg {
-            id: ent.id,
-            pid: ent.pid,
-            timestamp_ns: ent.timestamp,
-            cmd: format_cmd(&ent.cmd),
-            body,
+            id: w.id,
+            dropped,
+            pid: w.pid,
+            timestamp_ns: w.timestamp,
+            cmd: format_cmd(&w.cmd),
+            data: (w.has_data != 0).then_some((w.addr, w.val)),
+            stack: self.stack(w.kstack_sz, &w.kstack)?,
         })
     }
 
-    fn stack(&self, inner: &[u8]) -> Result<Body> {
-        let (msg, _) = split::<stack_msg>(inner)?;
-
-        let kstack_sz = msg.kstack_sz as i64;
+    fn stack(&self, kstack_sz: i64, kstack: &[u64]) -> Result<Stack> {
         if kstack_sz < 0 {
-            return Ok(Body::StackFailed { errno: -kstack_sz });
+            return Ok(Stack::Failed { errno: -kstack_sz });
         }
-        let depth = (kstack_sz as usize / size_of::<u64>()).min(msg.kstack.len());
-        let addrs: Vec<u64> = msg.kstack[..depth]
+        let depth = (kstack_sz as usize / size_of::<u64>()).min(kstack.len());
+        let addrs: Vec<u64> = kstack[..depth]
             .iter()
             .copied()
             .filter(|&a| a < PERF_CONTEXT_MAX)
             .collect();
         if addrs.is_empty() {
-            return Ok(Body::Stack(Vec::new()));
+            return Ok(Stack::Frames(Vec::new()));
         }
 
         /* An ELF source only takes virtual offsets; under nokaslr those are
@@ -159,7 +154,7 @@ impl Decoder {
             }
         }
 
-        Ok(Body::Stack(frames))
+        Ok(Stack::Frames(frames))
     }
 }
 
@@ -201,6 +196,9 @@ const ADDR_WIDTH: usize = 16;
 
 impl fmt::Display for Msg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.dropped > 0 {
+            writeln!(f, "({} hits dropped)", self.dropped)?;
+        }
         let t1 = self.timestamp_ns / 1_000_000_000;
         let t2 = self.timestamp_ns % 1_000_000_000;
         write!(
@@ -208,11 +206,12 @@ impl fmt::Display for Msg {
             "[{t1}.{t2:09}] id={} pid={} ({}):",
             self.id, self.pid, self.cmd
         )?;
-
-        match &self.body {
-            Body::Data { addr, val } => write!(f, "\n\tdata@0x{addr:x} = {val:x}"),
-            Body::StackFailed { errno } => write!(f, "\n\tfailed to get stack: errno {errno}"),
-            Body::Stack(frames) => {
+        if let Some((addr, val)) = self.data {
+            write!(f, "\n\tdata@0x{addr:x} = {val:x}")?;
+        }
+        match &self.stack {
+            Stack::Failed { errno } => write!(f, "\n\tfailed to get stack: errno {errno}"),
+            Stack::Frames(frames) => {
                 for frame in frames {
                     write!(f, "\n{frame}")?;
                 }
@@ -275,75 +274,97 @@ impl fmt::Display for CodeInfo {
 mod tests {
     use super::*;
 
-    fn header(typ: u64, cmd: &[u8]) -> Vec<u8> {
-        let mut v = Vec::new();
-        for x in [7u64, typ, 1_500_000_123, 42] {
-            v.extend_from_slice(&x.to_ne_bytes());
-        }
-        let mut c = msg_ent::default().cmd;
-        for (dst, &b) in c.iter_mut().zip(cmd) {
+    /// A hit as the BPF side would write it: pid 42, no data, empty stack.
+    fn hit(id: u64, cmd: &[u8]) -> wire {
+        let mut w = wire::default();
+        w.id = id;
+        w.timestamp = 1_500_000_123;
+        w.pid = 42;
+        for (dst, &b) in w.cmd.iter_mut().zip(cmd) {
             *dst = b as i8;
         }
-        v.extend(c.iter().map(|&b| b as u8));
-        v
+        w
     }
 
-    fn decode(bytes: &[u8]) -> Result<Msg> {
-        Decoder::new(None).decode(bytes)
+    fn bytes(w: &wire) -> Vec<u8> {
+        /* SAFETY: wire is a #[repr(C)] plain-data struct; this is the
+         * inverse of split(). */
+        unsafe { std::slice::from_raw_parts(w as *const wire as *const u8, size_of::<wire>()) }
+            .to_vec()
+    }
+
+    fn decode(w: &wire) -> Result<Msg> {
+        Decoder::new(None).decode(&bytes(w))
     }
 
     #[test]
-    fn data_msg_renders_like_before() -> Result<()> {
-        let mut bytes = header(MSG_TYPE_DATA, b"bash");
-        bytes.extend_from_slice(&0xffff0000u64.to_ne_bytes());
-        bytes.extend_from_slice(&0x2au64.to_ne_bytes());
+    fn data_hit_renders_data_line_then_stack() -> Result<()> {
+        let mut w = hit(1, b"bash");
+        w.has_data = 1;
+        w.addr = 0xffff0000;
+        w.val = 0x2a;
 
         assert_eq!(
-            decode(&bytes)?.to_string(),
-            "[1.500000123] id=7 pid=42 (\"bash\"):\n\tdata@0xffff0000 = 2a"
+            decode(&w)?.to_string(),
+            "[1.500000123] id=1 pid=42 (\"bash\"):\n\tdata@0xffff0000 = 2a"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn execute_hit_has_no_data_line() -> Result<()> {
+        let mut w = hit(1, b"sync");
+        w.addr = 0xffff0000;
+        assert_eq!(
+            decode(&w)?.to_string(),
+            "[1.500000123] id=1 pid=42 (\"sync\"):"
         );
         Ok(())
     }
 
     #[test]
     fn failed_stack_reports_errno() -> Result<()> {
-        let mut bytes = header(MSG_TYPE_STACK, b"0123456789abcdef");
-        bytes.extend_from_slice(&(-14i64 as u64).to_ne_bytes());
-        bytes.extend(
-            stack_msg::default()
-                .kstack
-                .iter()
-                .flat_map(|a| a.to_ne_bytes()),
-        );
+        let mut w = hit(1, b"0123456789abcdef");
+        w.kstack_sz = -14;
 
         assert_eq!(
-            decode(&bytes)?.to_string(),
-            "[1.500000123] id=7 pid=42 (\"0123456789abcdef\"...):\n\tfailed to get stack: errno 14"
+            decode(&w)?.to_string(),
+            "[1.500000123] id=1 pid=42 (\"0123456789abcdef\"...):\n\tfailed to get stack: errno 14"
         );
         Ok(())
     }
 
     #[test]
     fn perf_context_markers_are_not_frames() -> Result<()> {
-        let mut bytes = header(MSG_TYPE_STACK, b"sync");
-        bytes.extend_from_slice(&8u64.to_ne_bytes());
-        let mut stack = stack_msg::default().kstack;
-        stack[0] = -128i64 as u64;
-        bytes.extend(stack.iter().flat_map(|a| a.to_ne_bytes()));
+        let mut w = hit(1, b"sync");
+        w.kstack_sz = 8;
+        w.kstack[0] = -128i64 as u64;
 
         assert_eq!(
-            decode(&bytes)?.to_string(),
-            "[1.500000123] id=7 pid=42 (\"sync\"):"
+            decode(&w)?.to_string(),
+            "[1.500000123] id=1 pid=42 (\"sync\"):"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn id_gaps_are_reported_as_dropped_hits() -> Result<()> {
+        let d = Decoder::new(None);
+        assert_eq!(d.decode(&bytes(&hit(1, b"a")))?.dropped, 0);
+        assert_eq!(d.decode(&bytes(&hit(2, b"a")))?.dropped, 0);
+        let m = d.decode(&bytes(&hit(5, b"a")))?;
+        assert_eq!(m.dropped, 2);
+        assert_eq!(
+            m.to_string(),
+            "(2 hits dropped)\n[1.500000123] id=5 pid=42 (\"a\"):"
         );
         Ok(())
     }
 
     #[test]
     fn bad_input_is_err_not_panic() {
-        assert!(decode(&header(9, b"x")).is_err());
-        assert!(decode(&header(MSG_TYPE_DATA, b"x")[..10]).is_err());
-        /* data header without its payload */
-        assert!(decode(&header(MSG_TYPE_DATA, b"x")).is_err());
+        let short = &bytes(&hit(1, b"x"))[..10];
+        assert!(Decoder::new(None).decode(short).is_err());
     }
 
     fn code_info(line: Option<u32>, column: Option<u16>) -> CodeInfo {
