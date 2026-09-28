@@ -29,8 +29,7 @@ struct Cli {
     #[arg(
         short,
         long,
-        group = "target",
-        help = "vmlinux path of running kernel(need nokaslr)"
+        help = "vmlinux of the running kernel, for symbol addresses and stack source lines (needs nokaslr)"
     )]
     vmlinux: Option<PathBuf>,
 
@@ -102,7 +101,7 @@ fn main() -> Result<()> {
         RUNNING.store(false, Ordering::SeqCst);
     })?;
 
-    let decoder = Decoder::new();
+    let decoder = Decoder::new(cli.vmlinux.clone());
     watchpoint::poll(&[wp], &RUNNING, |bytes| match decoder.decode(bytes) {
         Ok(msg) => println!("{msg}"),
         Err(e) => eprintln!("kmemsnoop: {e}"),
@@ -159,9 +158,14 @@ mod tests {
     }
 
     #[test]
-    fn targets_are_mutually_exclusive() {
+    fn targets_are_mutually_exclusive() -> Result<()> {
         assert!(target(&["--pid-task", "1", "--pci-dev", "dev0", "rw4", "&id"]).is_err());
-        assert!(target(&["-v", "vmlinux", "--pid-task", "1", "rw4", "&id"]).is_err());
+        /* -v is not a target: it combines with any of them. */
+        assert_eq!(
+            target(&["-v", "vmlinux", "--pid-task", "1", "rw4", "&id"])?,
+            Target::task(1, "&id")?
+        );
+        Ok(())
     }
 
     #[test]

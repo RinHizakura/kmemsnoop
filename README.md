@@ -86,7 +86,7 @@ Arguments:
   <EXPR>  expression of watchpoint(kernel symbol or 0x address by default)
 
 Options:
-  -v, --vmlinux <VMLINUX>    vmlinux path of running kernel(need nokaslr)
+  -v, --vmlinux <VMLINUX>    vmlinux of the running kernel, for symbol addresses and stack source lines (needs nokaslr)
       --pid-task <PID_TASK>  kexpr: use 'struct task_struct' from pid
       --pci-dev <PCI_DEV>    kexpr: 'struct pci_dev' from the device name
       --usb-dev <USB_DEV>    kexpr: 'struct usb_device' from the device name
@@ -104,8 +104,10 @@ followed by the length `1`, `2`, `4` or `8`. For example, r8 means to watch a
 read operation from the base of `EXPR` with 8 bytes length.
 
 Options:
-* `VMLINUX` is the path of `vmlinux` file for getting the address of kernel
-symbol instead of using `/proc/kallsyms`. To use this option, you need to
+* `VMLINUX` is the path of the `vmlinux` file of the running kernel. It is used
+to get the address of a kernel symbol instead of `/proc/kallsyms`, and to
+symbolize the stack of every hit with source file and line from its DWARF. It
+combines with any of the "kexpr" options. To use this option, you need to
 add `nokaslr` to kernel bootargs because the address on kernel symbol will be
 random without it.
 * `PID_TASK` allows you to watch the field which is dereferenced from a
@@ -121,8 +123,8 @@ name `USB_DEV`. Check `/sys/bus/usb/devices/` for the valid name.
 `struct platform_device` by `EXPR`. The `struct platform_device` comes from the
 device with name `PLAT_DEV`. Check `/sys/bus/platform/devices/` for the valid name.
 
-`--vmlinux` and the four "kexpr" options are mutually exclusive. Giving more than
-one of them is an error.
+The four "kexpr" options are mutually exclusive. Giving more than one of them
+is an error.
 
 ### Examples
 

@@ -7,7 +7,7 @@ use std::mem::size_of;
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
-use blazesym::symbolize::{self, Input, Kernel, Source, Symbolized, Symbolizer};
+use blazesym::symbolize::{self, Elf, Input, Kernel, Source, Symbolized, Symbolizer};
 
 use crate::kmemsnoop::types::{data_msg, msg_ent, msg_type, stack_msg};
 
@@ -68,10 +68,16 @@ pub struct Decoder {
 }
 
 impl Decoder {
-    pub fn new() -> Self {
+    /// Stack frames are symbolized from `vmlinux` (DWARF, so with source
+    /// locations; needs nokaslr) when given, else from /proc/kallsyms.
+    pub fn new(vmlinux: Option<PathBuf>) -> Self {
+        let src = match vmlinux {
+            Some(path) => Source::Elf(Elf::new(path)),
+            None => Source::Kernel(Kernel::default()),
+        };
         Decoder {
             symbolizer: Symbolizer::new(),
-            src: Source::Kernel(Kernel::default()),
+            src,
         }
     }
 
@@ -116,9 +122,13 @@ impl Decoder {
             return Ok(Body::Stack(Vec::new()));
         }
 
-        let syms = self
-            .symbolizer
-            .symbolize(&self.src, Input::AbsAddr(&addrs))?;
+        /* An ELF source only takes virtual offsets; under nokaslr those are
+         * the kernel addresses themselves. */
+        let input = match self.src {
+            Source::Elf(_) => Input::VirtOffset(addrs.as_slice()),
+            _ => Input::AbsAddr(addrs.as_slice()),
+        };
+        let syms = self.symbolizer.symbolize(&self.src, input)?;
 
         let mut frames = Vec::new();
         for (input_addr, sym) in addrs.iter().copied().zip(syms) {
@@ -279,7 +289,7 @@ mod tests {
     }
 
     fn decode(bytes: &[u8]) -> Result<Msg> {
-        Decoder::new().decode(bytes)
+        Decoder::new(None).decode(bytes)
     }
 
     #[test]
