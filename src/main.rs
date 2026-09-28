@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::msg::Decoder;
 use crate::target::{Bus, Target};
-use crate::watchpoint::{Bp, Watchpoint};
+use crate::watchpoint::{Access, Bp, Watchpoint};
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
@@ -80,7 +80,7 @@ impl TryFrom<&Cli> for Target {
         if let Some(dev) = &cli.plat_dev {
             return Target::busdev(Bus::Platform, dev, expr);
         }
-        Target::kernel(cli.vmlinux.clone(), expr)
+        Target::kernel(cli.vmlinux.clone(), expr, cli.bp.access == Access::X)
     }
 }
 
@@ -94,7 +94,7 @@ fn main() -> Result<()> {
         sudo::escalate_if_needed().map_err(|e| anyhow!("Failed to escalate to root: {e}"))?;
     }
 
-    let addr = Target::try_from(&cli)?.resolve(cli.bp.sym_kind())?;
+    let addr = Target::try_from(&cli)?.resolve()?;
     let wp = Watchpoint::attach(addr, cli.bp)?;
     println!("Watchpoint attached on {addr:x}");
 

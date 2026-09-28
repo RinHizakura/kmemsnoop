@@ -20,7 +20,6 @@ use perf_event_open_sys::bindings::{
 use perf_event_open_sys::perf_event_open;
 
 use crate::kmemsnoop::{KmemsnoopSkel, KmemsnoopSkelBuilder};
-use crate::target::SymKind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Access {
@@ -64,14 +63,6 @@ impl FromStr for Bp {
 }
 
 impl Bp {
-    /// Execute watchpoints sit on functions, the others on data.
-    pub fn sym_kind(self) -> SymKind {
-        match self.access {
-            Access::X => SymKind::Func,
-            _ => SymKind::Data,
-        }
-    }
-
     fn hw_type(self) -> u32 {
         match self.access {
             Access::R => HW_BREAKPOINT_R,
@@ -281,8 +272,6 @@ mod tests {
                 assert_eq!(format!("{s}{len}").parse::<Bp>()?, Bp { access, len });
             }
         }
-        assert_eq!("x8".parse::<Bp>()?.sym_kind(), SymKind::Func);
-        assert_eq!("rw4".parse::<Bp>()?.sym_kind(), SymKind::Data);
         Ok(())
     }
 
