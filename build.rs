@@ -1,19 +1,15 @@
-use anyhow::Result;
-use std::fs::create_dir_all;
-use std::path::Path;
+use std::env;
+use std::path::PathBuf;
 
+use anyhow::Result;
 use libbpf_cargo::SkeletonBuilder;
 
 const SKEL_SRC: &str = "bpf/kmemsnoop.bpf.c";
-const SKEL_OUT: &str = "bpf/.output/kmemsnoop.skel.rs";
 
 fn main() -> Result<()> {
-    // FIXME: Is it possible to output to env!("OUT_DIR")?
-    std::env::set_var("BPF_OUT_DIR", "bpf/.output");
-
-    create_dir_all("bpf/.output")?;
-
-    let skel = Path::new(SKEL_OUT);
+    /* The BPF object goes to a temporary directory; only the skeleton is
+     * kept, in OUT_DIR, where src/main.rs include!()s it. */
+    let skel = PathBuf::from(env::var("OUT_DIR")?).join("kmemsnoop.skel.rs");
     SkeletonBuilder::new()
         .source(SKEL_SRC)
         .clang_args(["-I.", "-Wextra", "-Wall", "-Werror"])
