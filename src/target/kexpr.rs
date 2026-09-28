@@ -1,41 +1,26 @@
 use anyhow::{anyhow, Result};
 use drgn_knight::*;
 
-use super::expr::{Expr, Op};
+use super::expr::{Expr, Walk};
 use super::Bus;
 
-impl Expr {
-    /// Walk the parsed steps from `root` and read the final value, or its
-    /// address when the expression started with `&`.
-    pub fn eval(&self, root: &Object) -> Result<u64> {
-        let mut cur: Option<Object> = None;
-        let mut prev: Option<&str> = None;
-        for step in &self.steps {
-            let obj = cur.as_ref().unwrap_or(root);
-            let next = match step.op {
-                Op::Access => obj.member(&step.member),
-                Op::Deref => obj.deref_member(&step.member),
-            };
-            cur = Some(next.ok_or_else(|| match prev {
-                Some(prev) => anyhow!("member {:?} not found after {prev:?}", step.member),
-                None => anyhow!("member {:?} not found", step.member),
-            })?);
-            prev = Some(&step.member);
-        }
-
-        let cur = cur.expect("Expr::parse never yields an empty expression");
-        if self.addr_of {
-            cur.address_of()
-                .ok_or_else(|| anyhow!("can't take the address of {:?}", prev.unwrap_or("")))?
-                .to_num()
-        } else {
-            cur.to_num()
-        }
+/* Walking a kexpr over drgn's Object is pure forwarding. */
+impl Walk for Object {
+    fn member(&self, member: &str) -> Option<Self> {
+        Object::member(self, member)
+    }
+    fn deref_member(&self, member: &str) -> Option<Self> {
+        Object::deref_member(self, member)
+    }
+    fn address_of(&self) -> Option<Self> {
+        Object::address_of(self)
+    }
+    fn to_num(&self) -> Result<u64> {
+        Object::to_num(self)
     }
 }
 
-pub fn task(pid: u64, expr: &str) -> Result<usize> {
-    let expr = Expr::parse(expr)?;
+pub fn task(pid: u64, expr: &Expr) -> Result<usize> {
     let prog = Program::new()?;
     let task = prog.find_task(pid)?;
     Ok(expr.eval(&task)? as usize)
@@ -98,8 +83,7 @@ fn find_busdev(prog: &Program, bus: &str, dev_name: &str) -> Result<Object> {
     Err(anyhow!("Fail to find {dev_name} on bus {bus}"))
 }
 
-pub fn busdev(bus: Bus, dev_name: &str, expr: &str) -> Result<usize> {
-    let expr = Expr::parse(expr)?;
+pub fn busdev(bus: Bus, dev_name: &str, expr: &Expr) -> Result<usize> {
     let (bus_name, dev_struct) = bus.table();
     let prog = Program::new()?;
     let busdev = find_busdev(&prog, bus_name, dev_name)?;

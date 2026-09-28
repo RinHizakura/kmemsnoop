@@ -63,24 +63,24 @@ struct Cli {
     plat_dev: Option<String>,
 }
 
-impl From<&Cli> for Target {
-    fn from(cli: &Cli) -> Self {
+impl TryFrom<&Cli> for Target {
+    type Error = anyhow::Error;
+
+    fn try_from(cli: &Cli) -> Result<Self> {
+        let expr = &cli.expr;
         if let Some(pid) = cli.pid_task {
-            return Target::Task(pid);
+            return Target::task(pid, expr);
         }
         if let Some(dev) = &cli.pci_dev {
-            return Target::BusDev(Bus::Pci, dev.clone());
+            return Target::busdev(Bus::Pci, dev, expr);
         }
         if let Some(dev) = &cli.usb_dev {
-            return Target::BusDev(Bus::Usb, dev.clone());
+            return Target::busdev(Bus::Usb, dev, expr);
         }
         if let Some(dev) = &cli.plat_dev {
-            return Target::BusDev(Bus::Platform, dev.clone());
+            return Target::busdev(Bus::Platform, dev, expr);
         }
-
-        Target::Kernel {
-            vmlinux: cli.vmlinux.clone(),
-        }
+        Target::kernel(cli.vmlinux.clone(), expr)
     }
 }
 
@@ -94,7 +94,7 @@ fn main() -> Result<()> {
         sudo::escalate_if_needed().map_err(|e| anyhow!("Failed to escalate to root: {e}"))?;
     }
 
-    let addr = Target::from(&cli).resolve(&cli.expr, cli.bp.sym_kind())?;
+    let addr = Target::try_from(&cli)?.resolve(cli.bp.sym_kind())?;
     let wp = Watchpoint::attach(addr, cli.bp)?;
     println!("Watchpoint attached on {addr:x}");
 
