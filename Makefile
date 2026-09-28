@@ -61,10 +61,10 @@ $(VMLINUX_H): $(VMLINUX_BTF)
 check:
 	sudo cat /sys/kernel/debug/tracing/trace_pipe
 
-# FIXME: This will create file with super user permission. We
-# better avoid this if possible.
+# Only the test binaries run as root; PYTHONDONTWRITEBYTECODE keeps the
+# drgn oracle from leaving root-owned __pycache__ behind.
 test:
-	CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER='sudo -E' cargo test --target-dir test_build
+	PYTHONDONTWRITEBYTECODE=1 CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER='sudo -E' cargo test --target-dir test_build
 
 clean:
 	cargo clean
