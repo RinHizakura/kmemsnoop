@@ -40,8 +40,7 @@ pub enum Stack {
 pub struct Decoder<'a> {
     syms: &'a Symbols,
     /// Id of the last decoded Msg, to count the gap before the next one.
-    /// ponytail: ids are per ring buffer, so use one Decoder per Watchpoint
-    /// once poll() reports which one fired.
+    /// Ids are per ring buffer, so one Decoder serves one Watchpoint.
     last_id: Cell<u64>,
 }
 

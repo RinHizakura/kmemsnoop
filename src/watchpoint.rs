@@ -1,6 +1,7 @@
 //! One hardware watchpoint: its own BPF object, the per-CPU perf_event
 //! links that keep it armed, and the ring buffer it reports through.
-//! Several watchpoints can be polled together with `poll()`.
+//! Several watchpoints can be polled together with `poll()`, which
+//! delivers decoded `Msg`s.
 
 use std::io::Error;
 use std::mem::{size_of, MaybeUninit};
@@ -20,6 +21,8 @@ use perf_event_open_sys::bindings::{
 use perf_event_open_sys::perf_event_open;
 
 use crate::kmemsnoop::{KmemsnoopSkel, KmemsnoopSkelBuilder};
+use crate::msg::{Decoder, Msg};
+use crate::symbols::Symbols;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Access {
@@ -111,13 +114,20 @@ impl Watchpoint {
     }
 }
 
-/// Deliver every message from every watchpoint to `on_msg` until
-/// `running` turns false.
-pub fn poll(wps: &[Watchpoint], running: &AtomicBool, on_msg: impl Fn(&[u8])) -> Result<()> {
+/// Deliver every hit from every watchpoint to `on_msg` until `running`
+/// turns false. Msg ids count per ring buffer, so each watchpoint gets
+/// its own Decoder to tell its dropped hits.
+pub fn poll(
+    wps: &[Watchpoint],
+    running: &AtomicBool,
+    syms: &Symbols,
+    on_msg: impl Fn(Result<Msg>),
+) -> Result<()> {
+    let decoders: Vec<Decoder> = wps.iter().map(|_| Decoder::new(syms)).collect();
     let mut builder = RingBufferBuilder::new();
-    for wp in wps {
+    for (wp, decoder) in wps.iter().zip(&decoders) {
         builder.add(&wp.skel.maps.msg_ringbuf, |bytes| {
-            on_msg(bytes);
+            on_msg(decoder.decode(bytes));
             0
         })?;
     }

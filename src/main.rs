@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::msg::Decoder;
 use crate::symbols::Symbols;
 use crate::target::{Bus, Target};
 use crate::watchpoint::{Access, Bp, Watchpoint};
@@ -106,8 +105,7 @@ fn main() -> Result<()> {
         RUNNING.store(false, Ordering::SeqCst);
     })?;
 
-    let decoder = Decoder::new(&syms);
-    watchpoint::poll(&[wp], &RUNNING, |bytes| match decoder.decode(bytes) {
+    watchpoint::poll(&[wp], &RUNNING, &syms, |msg| match msg {
         Ok(msg) => println!("{msg}"),
         Err(e) => eprintln!("kmemsnoop: {e}"),
     })?;
