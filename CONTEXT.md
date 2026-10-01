@@ -38,7 +38,8 @@ the device name is looked up and which struct embeds its `struct device`.
 
 **SymKind**:
 Whether a kernel symbol is a function or data. Execute watchpoints look up
-functions; all others look up data.
+functions; all others look up data. In kallsyms, `t`/`T` and the weak
+`w`/`W` are functions; everything else is data.
 _Avoid_: symbol type
 
 **Msg**:
