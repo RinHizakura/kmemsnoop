@@ -1,30 +1,19 @@
 //! Watchpoint target resolution: turn the user's expression into a
-//! kernel address. Everything the CLI needs to know lives in `Target`,
-//! and `Bus`; kallsyms, vmlinux and kexpr are adapters behind
+//! kernel address. Everything the CLI needs to know lives in `Target`
+//! and `Bus`; symbol lookup and kexpr are adapters behind
 //! `Target::resolve()`.
 
 /* Walk and Expr::eval have no caller until the kexpr adapter is built. */
 #[cfg_attr(not(feature = "kexpr"), allow(dead_code))]
 mod expr;
-mod ksym;
 
 #[cfg(feature = "kexpr")]
 mod kexpr;
 
-use std::path::{Path, PathBuf};
+use anyhow::Result;
 
-use anyhow::{anyhow, Result};
-use blazesym::inspect::{self, Inspector};
-
+use crate::symbols::{SymKind, Symbols};
 use expr::Expr;
-
-/// Kind of kernel symbol to look up in kallsyms: execute watchpoints sit
-/// on functions, the others on data.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SymKind {
-    Func,
-    Data,
-}
 
 /// Kernel bus a kexpr device target lives on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,12 +42,8 @@ impl Bus {
 pub enum Target {
     /// A `0x` address in the kernel.
     Kaddr(usize),
-    /// A kernel symbol, looked up in vmlinux when given, else kallsyms.
-    Ksym {
-        vmlinux: Option<PathBuf>,
-        name: String,
-        kind: SymKind,
-    },
+    /// A kernel symbol, looked up through `Symbols`.
+    Ksym { name: String, kind: SymKind },
     /// `struct task_struct` of the given pid.
     Task { pid: u64, expr: Expr },
     /// The device with the given name on `Bus`.
@@ -69,12 +54,11 @@ impl Target {
     /// Only a 0x prefix means address; anything else is a symbol, unchecked
     /// because kallsyms names carry suffixes like `.cold` or `.isra.0`.
     /// `execute` tells which symbol namespace the name lives in.
-    pub fn kernel(vmlinux: Option<PathBuf>, expr: &str, execute: bool) -> Result<Target> {
+    pub fn kernel(expr: &str, execute: bool) -> Result<Target> {
         if expr.starts_with("0x") {
             Ok(Target::Kaddr(hexstr2int(expr)?))
         } else {
             Ok(Target::Ksym {
-                vmlinux,
                 name: expr.to_string(),
                 kind: if execute {
                     SymKind::Func
@@ -100,26 +84,18 @@ impl Target {
         })
     }
 
-    pub fn resolve(&self) -> Result<usize> {
+    pub fn resolve(&self, syms: &Symbols) -> Result<usize> {
         match self {
             Target::Kaddr(addr) => Ok(*addr),
-            Target::Ksym {
-                vmlinux: Some(path),
-                name,
-                ..
-            } => vmlinux2addr(name, path),
-            Target::Ksym {
-                vmlinux: None,
-                name,
-                kind,
-            } => ksym::find_ksym(name, *kind)?
-                .ok_or_else(|| anyhow!("Failed to get address of symbol {name}")),
+            Target::Ksym { name, kind } => syms.addr(name, *kind),
             #[cfg(feature = "kexpr")]
             Target::Task { pid, expr } => kexpr::task(*pid, expr),
             #[cfg(feature = "kexpr")]
             Target::BusDev { bus, name, expr } => kexpr::busdev(*bus, name, expr),
             #[cfg(not(feature = "kexpr"))]
-            Target::Task { .. } | Target::BusDev { .. } => Err(anyhow!("kexpr is not configured")),
+            Target::Task { .. } | Target::BusDev { .. } => {
+                Err(anyhow::anyhow!("kexpr is not configured"))
+            }
         }
     }
 }
@@ -128,44 +104,31 @@ fn hexstr2int(hex: &str) -> Result<usize> {
     Ok(usize::from_str_radix(hex.trim_start_matches("0x"), 16)?)
 }
 
-fn vmlinux2addr(sym: &str, vmlinux: &Path) -> Result<usize> {
-    let src = inspect::Source::Elf(inspect::Elf::new(vmlinux));
-    let inspector = Inspector::new();
-    let results = inspector.lookup(&src, &[sym])?;
-
-    let results = results.into_iter().flatten().collect::<Vec<_>>();
-
-    if results.len() != 1 {
-        return Err(anyhow!(format!("Failed to get address of symbol {sym}")));
-    }
-
-    Ok(results[0].addr as usize)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn kernel_target_address_needs_0x_prefix() -> Result<()> {
-        assert_eq!(0x1234, Target::kernel(None, "0x1234", false)?.resolve()?);
+        assert_eq!(
+            0x1234,
+            Target::kernel("0x1234", false)?.resolve(&Symbols::new(None))?
+        );
         /* "cad" is a symbol name, never the address 0xcad. */
         assert_eq!(
             Target::Ksym {
-                vmlinux: None,
                 name: "cad".into(),
                 kind: SymKind::Data,
             },
-            Target::kernel(None, "cad", false)?
+            Target::kernel("cad", false)?
         );
         /* Execute watchpoints look up functions. */
         assert_eq!(
             Target::Ksym {
-                vmlinux: None,
                 name: "ksys_sync".into(),
                 kind: SymKind::Func,
             },
-            Target::kernel(None, "ksys_sync", true)?
+            Target::kernel("ksys_sync", true)?
         );
         Ok(())
     }
@@ -197,15 +160,17 @@ mod kexpr_tests {
 
     #[test]
     fn test_task_struct_kexpr() -> Result<()> {
+        let syms = Symbols::new(None);
         let expect = exec!(["--pid", "1", "&on_rq"]);
-        assert_eq!(expect, Target::task(1, "&on_rq")?.resolve()?);
+        assert_eq!(expect, Target::task(1, "&on_rq")?.resolve(&syms)?);
         let expect = exec!(["--pid", "1", "parent"]);
-        assert_eq!(expect, Target::task(1, "parent")?.resolve()?);
+        assert_eq!(expect, Target::task(1, "parent")?.resolve(&syms)?);
 
         Ok(())
     }
 
     fn check_busdev(bus: Bus, opt: &str, expr: &str) -> Result<()> {
+        let syms = Symbols::new(None);
         let (bus_name, _) = bus.table();
         let devices = fs::read_dir(format!("/sys/bus/{bus_name}/devices/")).unwrap();
         for dev in devices {
@@ -213,7 +178,7 @@ mod kexpr_tests {
             let dev = dev_name.to_str().unwrap();
             let expect = exec!([opt, dev, expr]);
             let target = Target::busdev(bus, dev, expr)?;
-            assert_eq!(expect, target.resolve()?);
+            assert_eq!(expect, target.resolve(&syms)?);
         }
 
         Ok(())

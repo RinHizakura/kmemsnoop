@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::msg::Decoder;
+use crate::symbols::Symbols;
 use crate::target::{Bus, Target};
 use crate::watchpoint::{Access, Bp, Watchpoint};
 
@@ -9,6 +10,7 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 
 mod msg;
+mod symbols;
 mod target;
 mod watchpoint;
 
@@ -80,7 +82,7 @@ impl TryFrom<&Cli> for Target {
         if let Some(dev) = &cli.plat_dev {
             return Target::busdev(Bus::Platform, dev, expr);
         }
-        Target::kernel(cli.vmlinux.clone(), expr, cli.bp.access == Access::X)
+        Target::kernel(expr, cli.bp.access == Access::X)
     }
 }
 
@@ -94,7 +96,9 @@ fn main() -> Result<()> {
         sudo::escalate_if_needed().map_err(|e| anyhow!("Failed to escalate to root: {e}"))?;
     }
 
-    let addr = Target::try_from(&cli)?.resolve()?;
+    let target = Target::try_from(&cli)?;
+    let syms = Symbols::new(cli.vmlinux);
+    let addr = target.resolve(&syms)?;
     let wp = Watchpoint::attach(addr, cli.bp)?;
     println!("Watchpoint attached on {addr:x}");
 
@@ -102,7 +106,7 @@ fn main() -> Result<()> {
         RUNNING.store(false, Ordering::SeqCst);
     })?;
 
-    let decoder = Decoder::new(cli.vmlinux.clone());
+    let decoder = Decoder::new(&syms);
     watchpoint::poll(&[wp], &RUNNING, |bytes| match decoder.decode(bytes) {
         Ok(msg) => println!("{msg}"),
         Err(e) => eprintln!("kmemsnoop: {e}"),
@@ -115,7 +119,7 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::target::SymKind;
+    use crate::symbols::SymKind;
 
     fn target(args: &[&str]) -> Result<Target> {
         let cli = Cli::try_parse_from([&["kmemsnoop"], args].concat())?;
@@ -128,15 +132,14 @@ mod tests {
         assert_eq!(
             target(&["rw4", "nr_threads"])?,
             Target::Ksym {
-                vmlinux: None,
                 name: "nr_threads".into(),
                 kind: SymKind::Data,
             }
         );
+        /* -v picks the Symbols, not the Target. */
         assert_eq!(
             target(&["-v", "vmlinux", "x8", "ksys_sync"])?,
             Target::Ksym {
-                vmlinux: Some("vmlinux".into()),
                 name: "ksys_sync".into(),
                 kind: SymKind::Func,
             }

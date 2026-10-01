@@ -40,6 +40,13 @@ the device name is looked up and which struct embeds its `struct device`.
 Whether a kernel symbol is a function or data. Execute watchpoints look up
 functions; all others look up data. In kallsyms, `t`/`T` and the weak
 `w`/`W` are functions; everything else is data.
+
+**Symbols**:
+Where kernel symbols come from: `/proc/kallsyms` by default, or the vmlinux
+of the running kernel when given (then stack frames carry source lines, and
+only nokaslr works). A Target resolves a Ksym through it and a Msg's stack
+is symbolized through it, so the choice is made once.
+_Avoid_: symbol source, symbolizer, symbol table
 _Avoid_: symbol type
 
 **Msg**:

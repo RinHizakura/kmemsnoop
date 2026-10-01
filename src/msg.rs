@@ -5,12 +5,11 @@
 use std::cell::Cell;
 use std::fmt;
 use std::mem::size_of;
-use std::path::PathBuf;
 
 use anyhow::{bail, Result};
-use blazesym::symbolize::{self, Elf, Input, Kernel, Source, Symbolized, Symbolizer};
 
 use crate::kmemsnoop::types::kmemsnoop_msg as wire;
+use crate::symbols::{Frame, Symbols};
 
 /* perf callchains carry context markers (PERF_CONTEXT_KERNEL = -128, ...)
  * that all sit at or above PERF_CONTEXT_MAX; they are not return addresses.
@@ -38,50 +37,18 @@ pub enum Stack {
     },
 }
 
-/// One output line of a stack; inlined frames follow their parent.
-pub enum Frame {
-    Sym {
-        input_addr: u64,
-        name: String,
-        addr: u64,
-        offset: usize,
-        code_info: Option<CodeInfo>,
-    },
-    Inlined {
-        name: String,
-        code_info: Option<CodeInfo>,
-    },
-    Unknown {
-        input_addr: u64,
-    },
-}
-
-pub struct CodeInfo {
-    pub path: PathBuf,
-    pub line: Option<u32>,
-    pub column: Option<u16>,
-}
-
-pub struct Decoder {
-    symbolizer: Symbolizer,
-    src: Source<'static>,
+pub struct Decoder<'a> {
+    syms: &'a Symbols,
     /// Id of the last decoded Msg, to count the gap before the next one.
     /// ponytail: ids are per ring buffer, so use one Decoder per Watchpoint
     /// once poll() reports which one fired.
     last_id: Cell<u64>,
 }
 
-impl Decoder {
-    /// Stack frames are symbolized from `vmlinux` (DWARF, so with source
-    /// locations; needs nokaslr) when given, else from /proc/kallsyms.
-    pub fn new(vmlinux: Option<PathBuf>) -> Self {
-        let src = match vmlinux {
-            Some(path) => Source::Elf(Elf::new(path)),
-            None => Source::Kernel(Kernel::default()),
-        };
+impl<'a> Decoder<'a> {
+    pub fn new(syms: &'a Symbols) -> Self {
         Decoder {
-            symbolizer: Symbolizer::new(),
-            src,
+            syms,
             last_id: Cell::new(0),
         }
     }
@@ -116,45 +83,7 @@ impl Decoder {
         if addrs.is_empty() {
             return Ok(Stack::Frames(Vec::new()));
         }
-
-        /* An ELF source only takes virtual offsets; under nokaslr those are
-         * the kernel addresses themselves. */
-        let input = match self.src {
-            Source::Elf(_) => Input::VirtOffset(addrs.as_slice()),
-            _ => Input::AbsAddr(addrs.as_slice()),
-        };
-        let syms = self.symbolizer.symbolize(&self.src, input)?;
-
-        let mut frames = Vec::new();
-        for (input_addr, sym) in addrs.iter().copied().zip(syms) {
-            match sym {
-                Symbolized::Sym(symbolize::Sym {
-                    name,
-                    addr,
-                    offset,
-                    code_info,
-                    inlined,
-                    ..
-                }) => {
-                    frames.push(Frame::Sym {
-                        input_addr,
-                        name: name.into_owned(),
-                        addr,
-                        offset,
-                        code_info: code_info.as_ref().map(CodeInfo::from),
-                    });
-                    for f in inlined.iter() {
-                        frames.push(Frame::Inlined {
-                            name: f.name.to_string(),
-                            code_info: f.code_info.as_ref().map(CodeInfo::from),
-                        });
-                    }
-                }
-                Symbolized::Unknown(..) => frames.push(Frame::Unknown { input_addr }),
-            }
-        }
-
-        Ok(Stack::Frames(frames))
+        Ok(Stack::Frames(self.syms.frames(&addrs)?))
     }
 }
 
@@ -181,18 +110,6 @@ fn format_cmd(buf: &[i8]) -> String {
     let extra = if end.is_none() { "..." } else { "" };
     format!("\"{s}\"{extra}")
 }
-
-impl From<&symbolize::CodeInfo<'_>> for CodeInfo {
-    fn from(ci: &symbolize::CodeInfo<'_>) -> Self {
-        CodeInfo {
-            path: ci.to_path().into_owned(),
-            line: ci.line,
-            column: ci.column,
-        }
-    }
-}
-
-const ADDR_WIDTH: usize = 16;
 
 impl fmt::Display for Msg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -221,55 +138,6 @@ impl fmt::Display for Msg {
     }
 }
 
-impl fmt::Display for Frame {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Frame::Sym {
-                input_addr,
-                name,
-                addr,
-                offset,
-                code_info,
-            } => {
-                write!(
-                    f,
-                    "\t{input_addr:#0width$x}: {name} @ {addr:#x}+{offset:#x}",
-                    width = ADDR_WIDTH
-                )?;
-                if let Some(ci) = code_info {
-                    write!(f, " {ci}")?;
-                }
-                Ok(())
-            }
-            Frame::Inlined { name, code_info } => {
-                write!(f, "\t{:width$}  {name}", " ", width = ADDR_WIDTH)?;
-                if let Some(ci) = code_info {
-                    write!(f, " @ {ci}")?;
-                }
-                write!(f, " [inlined]")
-            }
-            Frame::Unknown { input_addr } => {
-                write!(
-                    f,
-                    "\t{input_addr:#0width$x}: <no-symbol>",
-                    width = ADDR_WIDTH
-                )
-            }
-        }
-    }
-}
-
-impl fmt::Display for CodeInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.path.display())?;
-        match (self.line, self.column) {
-            (Some(line), Some(col)) => write!(f, ":{line}:{col}"),
-            (Some(line), None) => write!(f, ":{line}"),
-            (None, _) => Ok(()),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,7 +162,7 @@ mod tests {
     }
 
     fn decode(w: &wire) -> Result<Msg> {
-        Decoder::new(None).decode(&bytes(w))
+        Decoder::new(&Symbols::new(None)).decode(&bytes(w))
     }
 
     #[test]
@@ -349,7 +217,8 @@ mod tests {
 
     #[test]
     fn id_gaps_are_reported_as_dropped_hits() -> Result<()> {
-        let d = Decoder::new(None);
+        let syms = Symbols::new(None);
+        let d = Decoder::new(&syms);
         assert_eq!(d.decode(&bytes(&hit(1, b"a")))?.dropped, 0);
         assert_eq!(d.decode(&bytes(&hit(2, b"a")))?.dropped, 0);
         let m = d.decode(&bytes(&hit(5, b"a")))?;
@@ -364,66 +233,6 @@ mod tests {
     #[test]
     fn bad_input_is_err_not_panic() {
         let short = &bytes(&hit(1, b"x"))[..10];
-        assert!(Decoder::new(None).decode(short).is_err());
-    }
-
-    fn code_info(line: Option<u32>, column: Option<u16>) -> CodeInfo {
-        CodeInfo {
-            path: "fs/sync.c".into(),
-            line,
-            column,
-        }
-    }
-
-    #[test]
-    fn frame_renders_sym_inlined_and_unknown() {
-        let sym = Frame::Sym {
-            input_addr: 0xffffffff816bfc8e,
-            name: "__do_sys_sync".into(),
-            addr: 0xffffffff816bfc80,
-            offset: 0xe,
-            code_info: None,
-        };
-        assert_eq!(
-            sym.to_string(),
-            "\t0xffffffff816bfc8e: __do_sys_sync @ 0xffffffff816bfc80+0xe"
-        );
-
-        let sym = Frame::Sym {
-            input_addr: 0x1234,
-            name: "f".into(),
-            addr: 0x1230,
-            offset: 4,
-            code_info: Some(code_info(Some(120), Some(3))),
-        };
-        assert_eq!(
-            sym.to_string(),
-            "\t0x00000000001234: f @ 0x1230+0x4 fs/sync.c:120:3"
-        );
-
-        let inlined = Frame::Inlined {
-            name: "g".into(),
-            code_info: None,
-        };
-        assert_eq!(inlined.to_string(), "\t                  g [inlined]");
-
-        let inlined = Frame::Inlined {
-            name: "g".into(),
-            code_info: Some(code_info(Some(7), None)),
-        };
-        assert_eq!(
-            inlined.to_string(),
-            "\t                  g @ fs/sync.c:7 [inlined]"
-        );
-
-        let unknown = Frame::Unknown { input_addr: 0x1234 };
-        assert_eq!(unknown.to_string(), "\t0x00000000001234: <no-symbol>");
-    }
-
-    #[test]
-    fn code_info_drops_missing_line_and_column() {
-        assert_eq!(code_info(Some(1), Some(2)).to_string(), "fs/sync.c:1:2");
-        assert_eq!(code_info(Some(1), None).to_string(), "fs/sync.c:1");
-        assert_eq!(code_info(None, Some(2)).to_string(), "fs/sync.c");
+        assert!(Decoder::new(&Symbols::new(None)).decode(short).is_err());
     }
 }
