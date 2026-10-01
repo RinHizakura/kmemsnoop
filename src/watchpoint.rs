@@ -74,6 +74,31 @@ impl Bp {
             Access::X => HW_BREAKPOINT_X,
         }
     }
+
+    /// The perf event of this breakpoint on `addr`, waking up on every hit.
+    /// Up to 6.0, bpf_get_stack() only works without precise_ip; from 6.1
+    /// on, precise_ip 2 delivers synchronously and the callchain is
+    /// attached to the sample, which bpf_get_stack() then reads instead of
+    /// unwinding (which warned and occasionally crashed). See
+    /// https://lore.kernel.org/bpf/20220908214104.3851807-1-namhyung@kernel.org/
+    fn perf_attr(self, addr: usize, kernel: (u32, u32)) -> perf_event_attr {
+        let mut attr = perf_event_attr::default();
+        attr.size = size_of::<perf_event_attr>() as u32;
+        attr.type_ = PERF_TYPE_BREAKPOINT;
+        attr.__bindgen_anon_3.bp_addr = addr as u64;
+        attr.__bindgen_anon_4.bp_len = self.len as u64;
+        attr.bp_type = self.hw_type();
+        attr.__bindgen_anon_1.sample_period = 1;
+        attr.__bindgen_anon_2.wakeup_events = 1;
+
+        if kernel <= (6, 0) {
+            attr.set_precise_ip(0);
+        } else {
+            attr.set_precise_ip(2);
+            attr.sample_type = PERF_SAMPLE_CALLCHAIN as u64;
+        }
+        attr
+    }
 }
 
 pub struct Watchpoint {
@@ -172,41 +197,13 @@ fn attach_perf_event(
     Ok(link)
 }
 
-fn attach_breakpoint(symbol_addr: usize, bp: Bp, prog: &mut ProgramMut) -> Result<Vec<Link>> {
-    let mut attr = perf_event_attr::default();
-    attr.size = size_of::<perf_event_attr>() as u32;
-    attr.type_ = PERF_TYPE_BREAKPOINT;
-    attr.__bindgen_anon_3.bp_addr = symbol_addr as u64;
-    attr.__bindgen_anon_4.bp_len = bp.len as u64;
-    attr.bp_type = bp.hw_type();
-    // response to every event
-    attr.__bindgen_anon_1.sample_period = 1;
-    attr.__bindgen_anon_2.wakeup_events = 1;
-
-    /* We need to consider different kernel version here. See:
-     * https://lore.kernel.org/bpf/20220908214104.3851807-1-namhyung@kernel.org/     */
-    let version = kernel_version()?;
-    if version <= (6, 0) {
-        /* Don't set precise_ip to allow bpf_get_stack(). This
-         * is a workaround and should be changed if better
-         * solution exist. */
-        attr.set_precise_ip(0);
-    } else {
-        /* request synchronous delivery */
-        attr.set_precise_ip(2);
-        /* On perf_event with precise_ip, calling bpf_get_stack()
-         * may trigger unwinder warnings and occasional crashes.
-         * bpf_get_[stack|stackid] works around this issue by using
-         * callchain attached to perf_sample_data. */
-        attr.sample_type = PERF_SAMPLE_CALLCHAIN as u64;
-    }
-
+/// Arm the breakpoint on every online CPU.
+fn attach_breakpoint(addr: usize, bp: Bp, prog: &mut ProgramMut) -> Result<Vec<Link>> {
+    let mut attr = bp.perf_attr(addr, kernel_version()?);
     let mut links = Vec::new();
     for cpu in get_online_cpus()? {
-        let link = attach_perf_event(&mut attr, -1, cpu, -1, prog)?;
-        links.push(link);
+        links.push(attach_perf_event(&mut attr, -1, cpu, -1, prog)?);
     }
-
     Ok(links)
 }
 
@@ -286,6 +283,30 @@ mod tests {
         for bad in ["", "rw", "4", "rw3", "q4", "RW4", "rw16", "rw4x"] {
             assert!(bad.parse::<Bp>().is_err(), "{bad:?} should not parse");
         }
+    }
+
+    #[test]
+    fn perf_attr_switches_stack_delivery_at_6_1() -> Result<()> {
+        let bp: Bp = "rw4".parse()?;
+
+        let old = bp.perf_attr(0x1234, (6, 0));
+        assert_eq!(old.type_, PERF_TYPE_BREAKPOINT);
+        assert_eq!(old.bp_type, HW_BREAKPOINT_RW);
+        /* SAFETY: reading back the union members perf_attr() wrote. */
+        unsafe {
+            assert_eq!(old.__bindgen_anon_3.bp_addr, 0x1234);
+            assert_eq!(old.__bindgen_anon_4.bp_len, 4);
+            assert_eq!(old.__bindgen_anon_1.sample_period, 1);
+            assert_eq!(old.__bindgen_anon_2.wakeup_events, 1);
+        }
+        assert_eq!(old.precise_ip(), 0);
+        assert_eq!(old.sample_type, 0);
+
+        let new = bp.perf_attr(0x1234, (6, 1));
+        assert_eq!(new.precise_ip(), 2);
+        assert_eq!(new.sample_type, PERF_SAMPLE_CALLCHAIN as u64);
+        assert_eq!(new.bp_type, HW_BREAKPOINT_RW);
+        Ok(())
     }
 
     #[test]
